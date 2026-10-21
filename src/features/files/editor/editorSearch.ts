@@ -26,7 +26,7 @@ import {
   type Panel,
   type ViewUpdate,
 } from "@codemirror/view";
-import { MOD, ALT, SHIFT } from "../../../platform/tauri/platform";
+import { ALT, EDITOR_MOD, MOD, SHIFT } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/model/settings";
 import {
   handleFilePreviewFindKey,
@@ -179,13 +179,13 @@ function openReplacePanel(view: EditorView): boolean {
 function findKeymap(): KeyBinding[] {
   return [
     {
-      key: "Mod-f",
+      key: `${EDITOR_MOD}-f`,
       run: openSearchPanel,
       scope: "editor search-panel",
       preventDefault: true,
     },
     {
-      key: "Mod-Alt-f",
+      key: `${EDITOR_MOD}-Alt-f`,
       run: openReplacePanel,
       scope: "editor search-panel",
       preventDefault: true,
@@ -198,7 +198,7 @@ function findKeymap(): KeyBinding[] {
       preventDefault: true,
     },
     {
-      key: "Mod-g",
+      key: `${EDITOR_MOD}-g`,
       run: findNext,
       shift: findPrevious,
       scope: "editor search-panel",

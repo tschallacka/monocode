@@ -14,7 +14,9 @@ import { isOscColorQuery, oscColorReply } from "../model/terminalChrome";
 import {
   isMacTerminalClearShortcut,
   macTerminalShortcutData,
+  pcTerminalEditAction,
 } from "../model/terminalKeys";
+import { nativeEditAction } from "../../../platform/tauri/editActions";
 import {
   defaultTerminalTitle,
   scanOscCwd,
@@ -27,7 +29,7 @@ import {
   resetGridStretch,
   type TerminalFitMode,
 } from "../model/terminalLayout";
-import { IS_MAC } from "../../../platform/tauri/platform";
+import { IS_MAC, PC_KEYS_ON_MAC } from "../../../platform/tauri/platform";
 import "@xterm/xterm/css/xterm.css";
 
 type Props = {
@@ -223,6 +225,17 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
         if (event.type === "keydown") {
           event.preventDefault();
           term.clear();
+        }
+        return false;
+      }
+
+      const pcAction = PC_KEYS_ON_MAC
+        ? pcTerminalEditAction(event, term.hasSelection())
+        : null;
+      if (pcAction) {
+        if (event.type === "keydown") {
+          event.preventDefault();
+          nativeEditAction(pcAction);
         }
         return false;
       }

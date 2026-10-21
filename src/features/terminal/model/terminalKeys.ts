@@ -25,6 +25,21 @@ export function macTerminalShortcutData(
 }
 
 /**
+ * Windows/Linux terminal clipboard chords for a Mac on "pc" keys: Ctrl+C copies
+ * only a selection, otherwise it stays the shell's interrupt.
+ */
+export function pcTerminalEditAction(
+  event: TerminalKeyEvent,
+  hasSelection: boolean,
+): "copy" | "paste" | null {
+  if (!event.ctrlKey || event.metaKey || event.altKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === "c" && (event.shiftKey || hasSelection)) return "copy";
+  if (key === "v") return "paste";
+  return null;
+}
+
+/**
  * Whether a key press is the macOS Cmd+K clear. It only reaches the terminal
  * when "App: Search" is disabled or rebound, since the app claims it first.
  */

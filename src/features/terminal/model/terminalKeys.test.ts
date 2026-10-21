@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isMacTerminalClearShortcut,
   macTerminalShortcutData,
+  pcTerminalEditAction,
 } from "./terminalKeys";
 
 function key(
@@ -77,5 +78,36 @@ describe("mac terminal clear shortcut", () => {
       isMacTerminalClearShortcut(key("k", { metaKey: true, altKey: true })),
     ).toBe(false);
     expect(isMacTerminalClearShortcut(key("j", { metaKey: true }))).toBe(false);
+  });
+});
+
+describe("pc terminal clipboard shortcuts", () => {
+  it("copies with Ctrl+C only while text is selected", () => {
+    expect(pcTerminalEditAction(key("c", { ctrlKey: true }), true)).toBe(
+      "copy",
+    );
+    expect(pcTerminalEditAction(key("c", { ctrlKey: true }), false)).toBe(
+      null,
+    );
+  });
+
+  it("copies with Ctrl+Shift+C and pastes with Ctrl+V or Ctrl+Shift+V", () => {
+    expect(
+      pcTerminalEditAction(key("C", { ctrlKey: true, shiftKey: true }), false),
+    ).toBe("copy");
+    expect(pcTerminalEditAction(key("v", { ctrlKey: true }), false)).toBe(
+      "paste",
+    );
+    expect(
+      pcTerminalEditAction(key("V", { ctrlKey: true, shiftKey: true }), false),
+    ).toBe("paste");
+  });
+
+  it("leaves Command, Option and other Ctrl chords to the terminal", () => {
+    expect(pcTerminalEditAction(key("c", { metaKey: true }), true)).toBe(null);
+    expect(
+      pcTerminalEditAction(key("v", { ctrlKey: true, altKey: true }), false),
+    ).toBe(null);
+    expect(pcTerminalEditAction(key("d", { ctrlKey: true }), true)).toBe(null);
   });
 });
