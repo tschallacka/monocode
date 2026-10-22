@@ -84,6 +84,8 @@ type Host = {
   nextLocalId: number;
   /** The roster read at attach is in: later pushes show panes on request. */
   rosterSeen: boolean;
+  /** The running process listed its commands; until then the known ones. */
+  commandsReported: boolean;
 };
 
 const EMPTY: ModHostSnapshot = {
@@ -125,6 +127,7 @@ function hostFor(sessionId: string): Host {
       listeners: new Set(),
       nextLocalId: 0,
       rosterSeen: false,
+      commandsReported: false,
     };
     hosts.set(sessionId, host);
   }
@@ -179,7 +182,85 @@ export async function connectModHost(
 
 /** The commands the session's mods registered, as `initialize` listed them. */
 export function setModCommands(sessionId: string, commands: ModCommand[]) {
-  update(hostFor(sessionId), { commands });
+  const host = hostFor(sessionId);
+  host.commandsReported = true;
+  update(host, { commands });
+  saveKnownModCommands(commands);
+}
+
+const KNOWN_COMMANDS_KEY = "monocode.claudeModCommands.v1";
+/** `undefined` until read; `null` while no session has ever listed them. */
+let known: ModCommand[] | null | undefined;
+const knownListeners = new Set<() => void>();
+let discoverer: (() => Promise<ModCommand[]>) | null = null;
+let discovering = false;
+
+function isModCommand(value: unknown): value is ModCommand {
+  const command = value as ModCommand | null;
+  return (
+    !!command &&
+    typeof command.name === "string" &&
+    typeof command.plugin === "string" &&
+    typeof command.description === "string" &&
+    typeof command.argumentHint === "string"
+  );
+}
+
+/**
+ * The mod commands the last Claude process listed. Mods are the user's, so
+ * a session whose process is not running yet offers these meanwhile.
+ */
+export function knownModCommands(): ModCommand[] | null {
+  if (known !== undefined) return known;
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(KNOWN_COMMANDS_KEY) ?? "null",
+    );
+    known = Array.isArray(parsed) ? parsed.filter(isModCommand) : null;
+  } catch {
+    known = null;
+  }
+  return known;
+}
+
+function saveKnownModCommands(commands: ModCommand[]) {
+  known = commands;
+  try {
+    localStorage.setItem(KNOWN_COMMANDS_KEY, JSON.stringify(commands));
+  } catch {
+    // Kept for this run only.
+  }
+  for (const listener of knownListeners) listener();
+}
+
+export function subscribeKnownModCommands(listener: () => void): () => void {
+  knownListeners.add(listener);
+  return () => knownListeners.delete(listener);
+}
+
+/** How a provider lists mod commands with no session running. */
+export function setModCommandDiscoverer(discover: () => Promise<ModCommand[]>) {
+  discoverer = discover;
+}
+
+/** Lists the mod commands once, when no Claude process has ever done so. */
+export function discoverModCommands() {
+  if (knownModCommands() !== null || discovering || !discoverer) return;
+  discovering = true;
+  discoverer()
+    .then(saveKnownModCommands, (error: unknown) =>
+      console.debug("Claude mod commands could not be listed:", error),
+    )
+    .finally(() => {
+      discovering = false;
+    });
+}
+
+/** A running session's own list, else what a Claude process last listed. */
+export function modCommandsFor(sessionId: string | undefined): ModCommand[] {
+  const host = sessionId ? hosts.get(sessionId) : undefined;
+  if (host?.commandsReported) return host.snapshot.commands;
+  return knownModCommands() ?? [];
 }
 
 /** The mod command a prompt runs (`/boards`, `/todo-board x`), if any. */
@@ -187,13 +268,10 @@ export function modCommandInPrompt(
   text: string,
   sessionId: string | undefined,
 ): ModCommand | null {
-  if (!sessionId) return null;
   const name = /^\s*\/([^\s/\\]+)(?=\s|$)/.exec(text)?.[1];
   if (!name) return null;
   return (
-    modHostSnapshot(sessionId).commands.find(
-      (command) => command.name === name,
-    ) ?? null
+    modCommandsFor(sessionId).find((command) => command.name === name) ?? null
   );
 }
 
@@ -203,6 +281,7 @@ export function disconnectModHost(sessionId: string) {
   if (!host) return;
   host.transport = null;
   host.rosterSeen = false;
+  host.commandsReported = false;
   for (const [, pending] of host.pending) {
     clearTimeout(pending.timer);
     pending.reject(new Error("The Claude session ended"));

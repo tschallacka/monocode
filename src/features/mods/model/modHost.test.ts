@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   connectModHost,
   disconnectModHost,
+  knownModCommands,
   modCommandInPrompt,
+  modCommandsFor,
   modHostSnapshot,
   noteModPush,
   pressModElement,
@@ -104,22 +106,71 @@ describe("mod commands", () => {
     plugin: "boards",
   };
 
-  it("finds the mod command a prompt starts with, in that session only", () => {
+  const todo = { ...boards, name: "todo-board", plugin: "todo-board" };
+
+  it("finds the mod command a prompt starts with", () => {
     const id = newSessionId();
     setModCommands(id, [boards]);
     expect(modCommandInPrompt("/boards", id)).toEqual(boards);
     expect(modCommandInPrompt("  /boards open todo", id)).toEqual(boards);
     expect(modCommandInPrompt("/boardsx", id)).toBeNull();
     expect(modCommandInPrompt("show /boards", id)).toBeNull();
-    expect(modCommandInPrompt("/boards", newSessionId())).toBeNull();
-    expect(modCommandInPrompt("/boards", undefined)).toBeNull();
   });
 
-  it("forgets a session's commands when its process ends", () => {
+  it("offers what a process last listed to sessions not running one", () => {
+    const running = newSessionId();
+    setModCommands(running, [boards, todo]);
+    // Another session's own process lists only one mod: that one wins there.
+    const other = newSessionId();
+    setModCommands(other, [todo]);
+    setModCommands(running, [boards, todo]);
+    expect(modCommandsFor(other)).toEqual([todo]);
+    // A session that never started a process gets the last known list.
+    expect(modCommandsFor(newSessionId())).toEqual([boards, todo]);
+    expect(modCommandInPrompt("/boards", undefined)).toEqual(boards);
+    expect(knownModCommands()).toEqual([boards, todo]);
+  });
+
+  it("falls back to the known list once its own process ends", () => {
     const id = newSessionId();
-    setModCommands(id, [boards]);
+    setModCommands(id, [todo]);
+    setModCommands(newSessionId(), [boards]);
     disconnectModHost(id);
     expect(modHostSnapshot(id).commands).toEqual([]);
+    expect(modCommandsFor(id)).toEqual([boards]);
+  });
+});
+
+describe("mod command discovery", () => {
+  afterEach(() => vi.resetModules());
+
+  it("lists the commands once when no process ever has", async () => {
+    vi.resetModules();
+    const host = await import("./modHost");
+    const discover = vi.fn(async () => [
+      { name: "boards", description: "", argumentHint: "", plugin: "boards" },
+    ]);
+    host.setModCommandDiscoverer(discover);
+    expect(host.knownModCommands()).toBeNull();
+    host.discoverModCommands();
+    host.discoverModCommands();
+    await flush();
+    expect(discover).toHaveBeenCalledTimes(1);
+    expect(host.modCommandsFor(undefined).map((c) => c.name)).toEqual([
+      "boards",
+    ]);
+    host.discoverModCommands();
+    expect(discover).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn a lister once a session has listed them", async () => {
+    vi.resetModules();
+    const host = await import("./modHost");
+    const discover = vi.fn(async () => []);
+    host.setModCommandDiscoverer(discover);
+    host.setModCommands("s", []);
+    host.discoverModCommands();
+    expect(discover).not.toHaveBeenCalled();
   });
 });
 

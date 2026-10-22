@@ -75,8 +75,9 @@ describe("native command composer behavior", () => {
       true,
     );
     expect(isNativeCommandPrompt("/review", "claude", "mod-session")).toBe(false);
+    // A session with no process yet knows the user's mods from the last one.
     expect(isNativeCommandPrompt("/boards", "claude", "other-session")).toBe(
-      false,
+      true,
     );
     expect(isNativeCommandPrompt("/boards", "pi", "mod-session")).toBe(false);
   });
