@@ -13,6 +13,7 @@ import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
+import { modCommandInPrompt } from "../../mods/model/modHost";
 import {
   CREATE_SKILL_BODY,
   CREATE_SKILL_DESCRIPTION,
@@ -148,10 +149,16 @@ export function hasNativeCommands(harness: HarnessId): boolean {
   return !!getHarness(harness)?.commands;
 }
 
+/**
+ * A prompt the harness runs as its own command, sent as typed. A command a
+ * Claude Code mod registered is one too: Claude runs it, not a skill body.
+ */
 export function isNativeCommandPrompt(
   text: string,
   harness: HarnessId,
+  sessionId?: string,
 ): boolean {
+  if (harness === "claude" && modCommandInPrompt(text, sessionId)) return true;
   return (
     getHarness(harness)?.commands?.rawSlashCommands === true &&
     /^\s*\/[^\s/\\]+(?=\s|$)/.test(text)

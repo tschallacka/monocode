@@ -28,6 +28,7 @@ import {
 } from "../../core/preview";
 import { streamTextDelta } from "../../core/streamText";
 import type { ApprovalDecision, HarnessEvent } from "../../core/types";
+import type { ModCommand } from "../../../../features/mods/model/modHost";
 
 /** Claude Code versions that first ship Opus 5.5 / Opus 5 / Sonnet 5 / Fable 5 / Opus 4.8 / 4.7. */
 export const MINIMUM_CLAUDE_OPUS_5_5_VERSION = "2.1.280";
@@ -376,6 +377,30 @@ export function listModelsFromControlResponse(
   if (!parsed || parsed.requestId !== requestId) return null;
   if (!parsed.ok) return [];
   return Array.isArray(parsed.payload?.models) ? parsed.payload.models : [];
+}
+
+/**
+ * The slash commands mods registered, from `initialize`'s answer: the entries
+ * that name a `plugin`, as skills and built-in commands do not.
+ */
+export function modCommandsFromInitialize(
+  payload: Record<string, unknown> | null,
+): ModCommand[] {
+  const commands = Array.isArray(payload?.commands) ? payload.commands : [];
+  return commands.flatMap((raw): ModCommand[] => {
+    const command = asRecord(raw);
+    const name = stringField(command, "name");
+    const plugin = stringField(command, "plugin");
+    if (!name || !plugin) return [];
+    return [
+      {
+        name,
+        plugin,
+        description: stringField(command, "description") ?? "",
+        argumentHint: stringField(command, "argumentHint") ?? "",
+      },
+    ];
+  });
 }
 
 export function isClaudeInitMessage(rec: Record<string, unknown>): boolean {

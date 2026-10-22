@@ -96,6 +96,7 @@ import { beginLayoutTransition } from "../shared/lib/layoutTransition";
 import { noteProjectStep, Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
 import { ModStatusChips, ModToasts } from "../features/mods/ui/ModSurfaces";
+import { subscribeModPaneOpened } from "../features/mods/model/modHost";
 import { ResourcePressureNotice } from "../features/notifications/ui/ResourcePressureNotice";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { NewLayoutNotice } from "./shell/NewLayoutNotice";
@@ -4698,6 +4699,18 @@ function Workspace({
     },
     [activeTabId],
   );
+  // A pane a mod shows on request (a board tool Claude called, a command the
+  // user ran) opens the session's Mods tab, as the terminal docks it.
+  const onOpenModsRef = useRef(onOpenMods);
+  onOpenModsRef.current = onOpenMods;
+  useEffect(() => {
+    const unsubscribe = subscribeModPaneOpened((sessionId) =>
+      onOpenModsRef.current(sessionId),
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const onOpenDiff = useCallback(
     (
@@ -7755,7 +7768,7 @@ function Workspace({
         : submittedText;
       const rawCommand =
         !operatorCommand.matched &&
-        isNativeCommandPrompt(submittedText, current.harness);
+        isNativeCommandPrompt(submittedText, current.harness, sessionId);
       const ciContext = options?.ciRepair?.prompt ?? options?.ciContext;
       const bashContext =
         rawCommand || options?.bashRun ? "" : pendingBashContext(current.blocks);

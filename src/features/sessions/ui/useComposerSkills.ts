@@ -11,6 +11,8 @@ import {
   type SkillCatalogContext,
 } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
+import type { ModCommand } from "../../mods/model/modHost";
+import { useModHost } from "../../mods/model/useModHost";
 
 export type ComposerSkillContextToken = {
   key: string;
@@ -119,16 +121,51 @@ export function useComposerSkills(input: {
     void refresh(pickerSkillLoadOptions(input.harness)).catch(() => undefined);
   }, [input.harness, input.pickerOpen, refresh]);
 
+  const { commands } = useModHost(
+    input.harness === "claude" ? input.sessionId : undefined,
+  );
+  const visible = visibleComposerSkills(
+    state,
+    contextKey,
+    peekSkills(context),
+    fallback,
+  );
+  const skills = useMemo(
+    () => withModCommands(visible, commands),
+    [visible, commands],
+  );
+
   return {
     contextKey,
     contextToken,
     isCurrent,
     refresh,
-    skills: visibleComposerSkills(
-      state,
-      contextKey,
-      peekSkills(context),
-      fallback,
-    ),
+    skills,
   };
+}
+
+/**
+ * The session's mod commands lead the picker; Claude runs them itself, so a
+ * file skill of the same name gives way rather than shadow one.
+ */
+export function withModCommands(
+  skills: Skill[],
+  commands: ModCommand[],
+): Skill[] {
+  if (commands.length === 0) return skills;
+  const names = new Set(commands.map((command) => command.name));
+  return [
+    ...commands.map(
+      (command): Skill => ({
+        kind: "native",
+        name: command.name,
+        description: command.description,
+        invocation: command.name,
+        source: "claude",
+        origin: command.plugin,
+        ...(command.argumentHint ? { inputHint: command.argumentHint } : {}),
+      }),
+    ),
+    ...skills.filter((skill) => !names.has(skill.name)),
+  ];
 }

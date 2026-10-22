@@ -1,40 +1,23 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   closeModPane,
   dismissModToast,
   inputModElement,
-  modHostSnapshot,
   pressModElement,
   renderModComponent,
   selectModElement,
   showModPane,
-  subscribeModHost,
   type ModHostSnapshot,
   type ModNode,
 } from "../model/modHost";
+import { useModHost } from "../model/useModHost";
 import { ModTree, type ModTreeActions } from "./ModTree";
+
+export { useModHost };
 
 /** A monospace cell at the pane's 13px text, for the columns a mod lays out to. */
 const CELL_PX = 7.8;
 const MIN_COLUMNS = 20;
-
-export function useModHost(sessionId: string | undefined): ModHostSnapshot {
-  const subscribe = useCallback(
-    (listener: () => void) =>
-      sessionId ? subscribeModHost(sessionId, listener) : () => {},
-    [sessionId],
-  );
-  return useSyncExternalStore(subscribe, () =>
-    sessionId ? modHostSnapshot(sessionId) : modHostSnapshot(""),
-  );
-}
 
 function useColumns() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -136,6 +119,9 @@ function ModSite({
 export function ModsSurface({ sessionId }: { sessionId: string }) {
   const host = useModHost(sessionId);
   const [selected, setSelected] = useState<string | null>(null);
+  // The engine showed another pane (Claude opened a board, a command ran):
+  // that one takes over from the sub-tab picked here.
+  useEffect(() => setSelected(null), [host.shownPaneId]);
   const shown =
     host.panes.find((pane) => pane.id === selected)?.id ??
     host.panes.find((pane) => pane.id === host.shownPaneId)?.id ??
