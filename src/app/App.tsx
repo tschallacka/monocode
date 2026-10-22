@@ -7163,6 +7163,7 @@ function Workspace({
             resolved,
             navigation?.line,
             navigation?.column,
+            fileCwd,
           );
           return;
         } catch (error) {
