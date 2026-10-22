@@ -2,6 +2,7 @@ import {
   ALT,
   IS_MAC,
   IS_WIN,
+  KEYS_MAC,
   MOD,
   SHIFT,
 } from "../../../platform/tauri/platform";
@@ -241,6 +242,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
           section: "general" as const,
           label: "Quick composer",
           keywords: "spotlight global shortcut hotkey floating prompt anywhere",
+        },
+        {
+          id: "keyboard-style",
+          section: "keybindings" as const,
+          label: "Windows & Linux shortcuts",
+          keywords: "keyboard style ctrl control command pc karabiner",
         },
       ]
     : []),
@@ -1167,7 +1174,7 @@ export function saveIdleAgentLimit(value: IdleAgentLimit) {
   }
 }
 
-const CTRL = IS_MAC ? "⌃" : "Ctrl+";
+const CTRL = KEYS_MAC ? "⌃" : "Ctrl+";
 
 export type KeybindingRow = {
   command: string;
@@ -1322,7 +1329,7 @@ const KEY_CODES: Record<string, string> = {
   "→": "ArrowRight",
 };
 
-const DISPLAY_MODIFIERS: [string, string][] = IS_MAC
+const DISPLAY_MODIFIERS: [string, string][] = KEYS_MAC
   ? [
       ["⌘", "Command"],
       ["⌃", "Control"],

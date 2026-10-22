@@ -216,7 +216,15 @@ import {
   projectName,
 } from "../../../shared/lib/paths";
 import { revealPath } from "../../../platform/tauri/fs";
-import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import {
+  IS_LINUX,
+  IS_MAC,
+  IS_WIN,
+  loadKeyboardStyle,
+  PC_KEYS_ON_MAC,
+  saveKeyboardStyle,
+  type KeyboardStyle,
+} from "../../../platform/tauri/platform";
 import {
   loadArchivedProjects,
   looksLikeProject,
@@ -660,6 +668,9 @@ export function SettingsView({
                 <AppearancePage appearance={appearance} />
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
+              {section === "keybindings" && IS_MAC ? (
+                <KeyboardStyleGroup />
+              ) : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
               {section === "monos" ? <MonosPage /> : null}
               {section === "mcp" ? (
@@ -2988,7 +2999,12 @@ function KeybindingsPage() {
 
   const save = async (command: string, override: KeybindingOverride) => {
     const next = saveKeybindingOverride(command, override);
-    if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: next });
+    if (IS_MAC) {
+      await invoke("keybindings_set_overrides", {
+        overrides: next,
+        pcKeys: PC_KEYS_ON_MAC,
+      });
+    }
   };
 
   return (
@@ -3061,6 +3077,34 @@ function KeybindingsPage() {
           );
         })
       )}
+    </Group>
+  );
+}
+
+function KeyboardStyleGroup() {
+  const [style, setStyle] = useState<KeyboardStyle>(loadKeyboardStyle);
+  const pending = (style === "pc") !== PC_KEYS_ON_MAC;
+  const onChange = (pc: boolean) => {
+    const next = pc ? "pc" : "mac";
+    saveKeyboardStyle(next);
+    setStyle(next);
+  };
+  return (
+    <Group title="Keyboard">
+      <Row
+        id="keyboard-style"
+        label="Windows & Linux shortcuts"
+        description="Use Ctrl as the main modifier, as MonoCode does on Windows and Linux: Ctrl+C, V, X, Z, Y and A edit text, and in the terminal Ctrl+C copies a selection and otherwise interrupts. For keyboards that send a real Ctrl to MonoCode, for example through Karabiner. Applies after View: Reload or a restart."
+      >
+        {pending ? (
+          <span className="text-[12px] text-content/45">Reload to apply</span>
+        ) : null}
+        <Toggle
+          label="Windows & Linux shortcuts"
+          on={style === "pc"}
+          onChange={onChange}
+        />
+      </Row>
     </Group>
   );
 }

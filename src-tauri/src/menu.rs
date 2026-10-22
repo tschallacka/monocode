@@ -22,6 +22,11 @@ pub struct KeybindingOverride {
 #[cfg(target_os = "macos")]
 static AUTOSAVE_ENABLED: AtomicBool = AtomicBool::new(false);
 
+/// "pc" keyboard style: the webview key handler owns every default chord, as
+/// on Windows and Linux, so the menu keeps only rebound accelerators.
+#[cfg(target_os = "macos")]
+static PC_KEYS: AtomicBool = AtomicBool::new(false);
+
 #[cfg(target_os = "macos")]
 fn set_autosave_menu_checked(app: &AppHandle, enabled: bool) {
     let Some(menu) = app.menu() else {
@@ -80,7 +85,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 pub fn keybindings_set_overrides(
     app: AppHandle,
     overrides: HashMap<String, KeybindingOverride>,
+    pc_keys: Option<bool>,
 ) -> Result<(), String> {
+    if let Some(pc_keys) = pc_keys {
+        PC_KEYS.store(pc_keys, Ordering::Relaxed);
+    }
     let menu = build(&app, &overrides).map_err(|error| error.to_string())?;
     // set_menu hands back the previous menu; this command only needs to know
     // whether it succeeded.
@@ -111,10 +120,39 @@ fn menu_item(
         builder
     } else if let Some(shortcut) = override_.and_then(|value| value.shortcut.as_deref()) {
         builder.accelerator(custom_accelerator(shortcut))
+    } else if PC_KEYS.load(Ordering::Relaxed) {
+        builder
     } else {
         builder.accelerator(accelerator)
     };
     builder.build(app)
+}
+
+/// Sends an Edit menu action to the first responder, as the menu item does.
+/// On "pc" keys WKWebView has no Ctrl+C/X/V/Z/A of its own.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn native_edit_action(app: AppHandle, action: String) -> Result<(), String> {
+    use objc2::sel;
+    let selector = match action.as_str() {
+        "copy" => sel!(copy:),
+        "cut" => sel!(cut:),
+        "paste" => sel!(paste:),
+        "undo" => sel!(undo:),
+        "redo" => sel!(redo:),
+        "selectAll" => sel!(selectAll:),
+        _ => return Err(format!("Unknown edit action: {action}")),
+    };
+    app.run_on_main_thread(move || {
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+        // SAFETY: a nil target routes a standard edit selector through the
+        // responder chain, which is exactly what the Edit menu items do.
+        unsafe { ns_app.sendAction_to_from(selector, None, None) };
+    })
+    .map_err(|error| error.to_string())
 }
 
 pub fn dispatch(app: &AppHandle, id: &str) {

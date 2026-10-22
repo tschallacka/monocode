@@ -1,5 +1,12 @@
 import { acceptCompletion, completionStatus } from "@codemirror/autocomplete";
-import { indentLess, indentMore } from "@codemirror/commands";
+import {
+  indentLess,
+  indentMore,
+  redo,
+  selectAll,
+  toggleComment,
+  undo,
+} from "@codemirror/commands";
 import {
   foldGutter,
   foldKeymap,
@@ -96,10 +103,23 @@ import { editorLint } from "../editor/editorLint";
 import { editorSearch } from "../editor/editorSearch";
 import { editorScrollbar } from "../editor/editorScrollbar";
 import { FilePreviewSearch } from "./FilePreviewSearch";
+import { EDITOR_MOD, PC_KEYS_ON_MAC } from "../../../platform/tauri/platform";
 
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
 export const FILE_EDITOR_AUTOSAVE_DELAY_MS = 1_000;
+
+/**
+ * Windows/Linux edit chords for a Mac on "pc" keys, where CodeMirror binds
+ * these to Cmd and leaves Ctrl to its emacs keys.
+ */
+const PC_EDIT_KEYMAP = [
+  { key: "Ctrl-z", run: undo, preventDefault: true },
+  { key: "Ctrl-y", run: redo, preventDefault: true },
+  { key: "Ctrl-Shift-z", run: redo, preventDefault: true },
+  { key: "Ctrl-a", run: selectAll, preventDefault: true },
+  { key: "Ctrl-/", run: toggleComment, preventDefault: true },
+];
 
 const editorScheme = new Compartment();
 const editorGitConfig = new Compartment();
@@ -802,7 +822,12 @@ export function CodeMirrorEditor({
         Prec.high(
           keymap.of([
             ...foldKeymap,
-            { key: "Mod-s", run: () => save(), preventDefault: true },
+            ...(PC_KEYS_ON_MAC ? PC_EDIT_KEYMAP : []),
+            {
+              key: `${EDITOR_MOD}-s`,
+              run: () => save(),
+              preventDefault: true,
+            },
             {
               key: "Tab",
               run: (view) => {

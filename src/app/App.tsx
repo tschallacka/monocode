@@ -196,7 +196,17 @@ import {
   loadProjectSidebarTab,
   saveProjectSidebarTab,
 } from "../features/settings/model/projectSidebarTab";
-import { HAS_NATIVE_GLASS, IS_MAC } from "../platform/tauri/platform";
+import {
+  HAS_NATIVE_GLASS,
+  IS_MAC,
+  KEYS_MAC,
+  PC_KEYS_ON_MAC,
+} from "../platform/tauri/platform";
+import { nativeEditAction } from "../platform/tauri/editActions";
+import {
+  editTargetOf,
+  pcEditAction,
+} from "../features/settings/model/pcEditKeys";
 import {
   runBashModeCommand,
   type BashModeChunk,
@@ -13472,7 +13482,27 @@ function Workspace({
     );
     void invoke("keybindings_set_overrides", {
       overrides: loadKeybindingOverrides(),
+      pcKeys: PC_KEYS_ON_MAC,
     }).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!PC_KEYS_ON_MAC) return;
+    // Bubble phase, so a surface that handles the chord itself goes first.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const action = pcEditAction(
+        e,
+        editTargetOf(target),
+        Boolean(window.getSelection()?.toString()),
+      );
+      if (!action) return;
+      e.preventDefault();
+      nativeEditAction(action);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   useEffect(() => {
@@ -13563,9 +13593,7 @@ function Workspace({
           target?.closest(".monocode-terminal") &&
           e.ctrlKey &&
           !e.metaKey &&
-          (cmd === "back" ||
-            cmd === "forward" ||
-            /Mac|iPhone|iPad/.test(navigator.platform))
+          (cmd === "back" || cmd === "forward" || KEYS_MAC)
         ) {
           return;
         }
