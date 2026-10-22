@@ -946,10 +946,10 @@ pub fn harness_spawn(
     let mut cmd = Command::new(&command);
     cmd.args(&devin_config)
         .args(&args)
-        .current_dir(&workdir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    set_child_dir(&mut cmd, &workdir);
     prepare_child(&mut cmd, &command);
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
     let codex_store = match codex_store.as_deref() {
@@ -1558,7 +1558,7 @@ pub(crate) fn exec_output(
     if let Some(dir) = cwd {
         let workdir = expand_home(dir);
         if workdir.is_dir() {
-            cmd.current_dir(workdir);
+            set_child_dir(&mut cmd, &workdir);
         }
     }
 
@@ -1739,7 +1739,7 @@ pub async fn bash_mode_exec(
         if let Some(dir) = cwd.as_deref() {
             let workdir = expand_home(dir);
             if workdir.is_dir() {
-                cmd.current_dir(workdir);
+                set_child_dir(&mut cmd, &workdir);
             }
         }
         let mut child =
@@ -3268,6 +3268,14 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
     }
 }
 
+/// Runs the child in `dir` and tells it so: `PWD` is what launchers such as
+/// JetBrains' read, and MonoCode's own was wherever it was started from.
+pub(crate) fn set_child_dir(cmd: &mut Command, dir: &Path) {
+    cmd.current_dir(dir);
+    cmd.env("PWD", dir);
+    cmd.env_remove("OLDPWD");
+}
+
 fn prepare_child(cmd: &mut Command, command: &str) {
     apply_gui_env(cmd);
     if command_basename(command) == "fx" {
@@ -3993,6 +4001,18 @@ mod tests {
         assert_eq!(which_in_path("", "claude"), None);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_child_dir_gives_the_child_its_own_folder_as_pwd() {
+        let dir = Path::new("/tmp/project");
+        let mut cmd = Command::new("true");
+        cmd.env("OLDPWD", "/gone/worktree");
+        set_child_dir(&mut cmd, dir);
+        assert_eq!(cmd.get_current_dir(), Some(dir));
+        let envs: Vec<_> = cmd.get_envs().collect();
+        assert!(envs.contains(&(std::ffi::OsStr::new("PWD"), Some(dir.as_os_str()))));
+        assert!(envs.contains(&(std::ffi::OsStr::new("OLDPWD"), None)));
     }
 
     #[test]

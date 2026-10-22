@@ -241,6 +241,7 @@ fn launch_editor_sync(editor_id: &str, cwd: &str) -> Result<(), String> {
     };
 
     harness::apply_gui_env(&mut command);
+    harness::set_child_dir(&mut command, &cwd);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -255,12 +256,18 @@ fn launch_file_sync(
     path: &str,
     line: Option<u32>,
     column: Option<u32>,
+    cwd: Option<&str>,
 ) -> Result<(), String> {
     let editor = definition(editor_id).ok_or_else(|| "Unknown external editor.".to_string())?;
     let path = expand_home(path);
     if !path.is_file() {
         return Err(format!("{} is not a file.", path.display()));
     }
+    // The project the file was opened from, else the file's own folder.
+    let workdir = cwd
+        .map(expand_home)
+        .filter(|dir| dir.is_dir())
+        .or_else(|| path.parent().map(Path::to_path_buf));
     let launcher =
         resolve_editor(editor).ok_or_else(|| format!("{} is no longer installed.", editor.name))?;
 
@@ -302,6 +309,9 @@ fn launch_file_sync(
     };
 
     harness::apply_gui_env(&mut command);
+    if let Some(workdir) = workdir {
+        harness::set_child_dir(&mut command, &workdir);
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -317,10 +327,13 @@ pub async fn open_file_in_external_editor(
     path: String,
     line: Option<u32>,
     column: Option<u32>,
+    cwd: Option<String>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || launch_file_sync(&editor_id, &path, line, column))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        launch_file_sync(&editor_id, &path, line, column, cwd.as_deref())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command(async)]

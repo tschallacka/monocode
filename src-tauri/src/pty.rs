@@ -261,6 +261,8 @@ fn spawn_unix(
     let mut cmd = Command::new(&shell);
     cmd.args(&args)
         .current_dir(&workdir)
+        .env("PWD", &workdir)
+        .env_remove("OLDPWD")
         .stdin(dup_stdio(slave)?)
         .stdout(dup_stdio(slave)?)
         .stderr(dup_stdio(slave)?)
@@ -395,6 +397,8 @@ fn spawn_windows(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.args(&args);
     cmd.cwd(&workdir);
+    cmd.env("PWD", &workdir);
+    cmd.env_remove("OLDPWD");
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("COLORFGBG", "15;0");

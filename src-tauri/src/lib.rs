@@ -236,6 +236,10 @@ fn should_request_quit(code: Option<i32>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `PWD` is the folder MonoCode was started from, which can be deleted
+    // under it (a removed worktree). Children get the folder they run in.
+    std::env::remove_var("PWD");
+    std::env::remove_var("OLDPWD");
     let context = tauri::generate_context!();
     #[cfg(all(debug_assertions, target_os = "macos"))]
     {
