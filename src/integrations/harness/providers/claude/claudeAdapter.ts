@@ -24,6 +24,8 @@ import {
   warmupClaudeText,
 } from "./claudeText";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
+import { setModCommandDiscoverer } from "../../../../features/mods/model/modHost";
+import { discoverClaudeModCommands } from "./claudeModCommands";
 
 export const claudeAdapter: HarnessAdapter = {
   id: "claude",
@@ -54,5 +56,6 @@ let registered = false;
 export function ensureClaudeRegistered(): void {
   if (registered) return;
   registerHarness(claudeAdapter);
+  setModCommandDiscoverer(discoverClaudeModCommands);
   registered = true;
 }

@@ -11,8 +11,17 @@ import {
   type SkillCatalogContext,
 } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
-import type { ModCommand } from "../../mods/model/modHost";
-import { useModHost } from "../../mods/model/useModHost";
+import {
+  discoverModCommands,
+  modCommandsFor,
+  type ModCommand,
+} from "../../mods/model/modHost";
+import {
+  useKnownModCommands,
+  useModHost,
+} from "../../mods/model/useModHost";
+
+const NO_COMMANDS: ModCommand[] = [];
 
 export type ComposerSkillContextToken = {
   key: string;
@@ -121,9 +130,14 @@ export function useComposerSkills(input: {
     void refresh(pickerSkillLoadOptions(input.harness)).catch(() => undefined);
   }, [input.harness, input.pickerOpen, refresh]);
 
-  const { commands } = useModHost(
-    input.harness === "claude" ? input.sessionId : undefined,
-  );
+  const claude = input.harness === "claude";
+  // Both subscriptions redraw the picker; modCommandsFor picks the list.
+  useModHost(claude ? input.sessionId : undefined);
+  useKnownModCommands();
+  useEffect(() => {
+    if (claude) discoverModCommands();
+  }, [claude]);
+  const commands = claude ? modCommandsFor(input.sessionId) : NO_COMMANDS;
   const visible = visibleComposerSkills(
     state,
     contextKey,
