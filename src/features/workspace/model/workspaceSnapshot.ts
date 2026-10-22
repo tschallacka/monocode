@@ -5,6 +5,7 @@ import {
 import {
   closeLeaf,
   isAgentTab,
+  isModsTab,
   isTerminalTab,
   leafIds,
   newTab,
@@ -149,15 +150,20 @@ function parseProjectReturnTargets(raw: unknown): ProjectReturnMemory {
  * Agent tabs watch a live worker, and a run does not outlive the window that
  * started it. Dropping them in `sanitizeFile` would strand an empty pane and
  * cost the whole workspace tab on restore, so the pane is closed here instead.
+ * A mods tab draws from its session's running process, so it goes the same way.
  */
+function isLiveOnlyTab(file: FilePaneTab): boolean {
+  return isAgentTab(file) || isModsTab(file);
+}
+
 function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   return tabs.flatMap((tab) => {
-    if (!tab.editorPanes.some((pane) => pane.files.some(isAgentTab)))
+    if (!tab.editorPanes.some((pane) => pane.files.some(isLiveOnlyTab)))
       return [tab];
     let remaining: WorkspaceTab | null = tab;
     const panes: EditorPane[] = [];
     for (const pane of tab.editorPanes) {
-      const files = pane.files.filter((file) => !isAgentTab(file));
+      const files = pane.files.filter((file) => !isLiveOnlyTab(file));
       if (files.length === pane.files.length) {
         panes.push(pane);
       } else if (files.length === 0) {

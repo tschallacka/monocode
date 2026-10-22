@@ -8,6 +8,12 @@ import type {
 } from "../../../../features/sessions/model/session";
 import { loadClaudeHooks } from "../../../../features/settings/model/settings";
 import {
+  connectModHost,
+  disconnectModHost,
+  noteModPush,
+  settleModResponse,
+} from "../../../../features/mods/model/modHost";
+import {
   killChild,
   resolveClaudeBinary,
   spawnChild,
@@ -47,6 +53,7 @@ import {
   parseBackgroundTasks,
   parseControlCancelId,
   parseControlRequest,
+  parseControlResponse,
   parseJsonLine,
   parseTaskNotification,
   parseTaskProgress,
@@ -188,6 +195,8 @@ type Resume = {
 };
 
 const INIT_TIMEOUT_MS = 8_000;
+/** MonoCode docks mod panes beside the chat, as a fullscreen terminal does. */
+const MOD_VIEWPORT = { columns: 100, rows: 40, isFullscreen: true };
 /**
  * How long a finished background task may take to wake Claude before the turn
  * is let go anyway. The follow-up turn normally starts within a second or two.
@@ -394,6 +403,7 @@ export async function stopClaudeSession(sessionId: string): Promise<void> {
     live.initDone?.();
     live.initDone = null;
   }
+  disconnectModHost(sessionId);
   unwatchChild(sessionId);
   await killChild(sessionId).catch(() => undefined);
 }
@@ -548,6 +558,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     },
     (code) => {
       liveByThread.delete(input.sessionId);
+      disconnectModHost(input.sessionId);
       const current = liveRef.current;
       if (!current?.muteUpdates) {
         (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
@@ -589,6 +600,20 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerSessionId: live.claudeSessionId,
     });
     live.onEvent({ type: "session.started" });
+    // Mods draw through the engine's remote-surface protocol; an engine
+    // without it refuses the attach and the session runs as before.
+    void connectModHost(
+      input.sessionId,
+      {
+        nextRequestId: () => nextControlId(live),
+        write: (requestId, request) =>
+          writeJson(input.sessionId, buildControlRequest(requestId, request)),
+      },
+      MOD_VIEWPORT,
+    ).catch((error: unknown) => {
+      console.debug("Claude mods are not available:", error);
+      disconnectModHost(input.sessionId);
+    });
     return live;
   } catch (error) {
     await stopClaudeSession(input.sessionId);
@@ -718,9 +743,23 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   }
 
   if (type === "control_response") {
+    const response = parseControlResponse(rec);
+    if (
+      response &&
+      settleModResponse(
+        sessionId,
+        response.requestId,
+        response.ok
+          ? { ok: true, payload: response.payload ?? {} }
+          : { ok: false, error: response.error ?? "control request failed" },
+      )
+    ) {
+      return;
+    }
     markInitialized(live);
     return;
   }
+  if (type === "system" && noteModPush(sessionId, rec)) return;
 
   if (live.manualCompaction && type !== "system" && type !== "result") {
     return;

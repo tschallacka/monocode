@@ -81,6 +81,7 @@ export function UsageFooter({
   onManageAccounts,
   inset = false,
   pressureSlot,
+  modsSlot,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
@@ -101,6 +102,8 @@ export function UsageFooter({
   inset?: boolean;
   /** Receives the slot beside the terminal button for the pressure chip. */
   pressureSlot?: (element: HTMLSpanElement | null) => void;
+  /** The session's Claude Code mod status, when it has any. */
+  modsSlot?: ReactNode;
 }) {
   const opencode = useCachedRateLimits("opencode");
   const showUsage =
@@ -153,8 +156,9 @@ export function UsageFooter({
           ) : null
         }
       />
-      {showTerminals || showTerminalButton || pressureSlot ? (
+      {showTerminals || showTerminalButton || pressureSlot || modsSlot ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {modsSlot}
           {pressureSlot ? (
             <span
               ref={pressureSlot}

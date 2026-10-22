@@ -55,6 +55,11 @@ export type SessionChangesSource = {
   sessionId: string;
 };
 
+/** The Claude Code mod panes one session's process draws. */
+export type ModsTabSource = {
+  sessionId: string;
+};
+
 export type FilePaneTab = {
   id: string;
   path: string;
@@ -74,6 +79,8 @@ export type FilePaneTab = {
   commit?: CommitTabSource;
   /** Read-only transcript of an orchestration worker. Live only — not persisted. */
   agent?: AgentTabSource;
+  /** A session's Claude Code mod panes. Live only — not persisted. */
+  mods?: ModsTabSource;
   terminal?: boolean;
   /** Foreground command when it isn't the shell. Live only — not persisted. */
   foreground?: string;
@@ -298,6 +305,16 @@ export function openWorkspaceFile(
   };
 }
 
+/** A session's mod panes; `path` carries the label, as an agent tab's does. */
+export function newModsTab(cwd: string, sessionId: string): FilePaneTab {
+  return {
+    id: crypto.randomUUID(),
+    path: "Mods",
+    cwd,
+    mods: { sessionId },
+  };
+}
+
 /** `path` carries the label: an agent tab has no file behind it. */
 export function newAgentTab(
   title: string,
@@ -430,12 +447,19 @@ export function isAgentTab(
   return !!file.agent;
 }
 
+export function isModsTab(
+  file: FilePaneTab,
+): file is FilePaneTab & { mods: ModsTabSource } {
+  return !!file.mods;
+}
+
 export function isVirtualDocumentTab(file: FilePaneTab): boolean {
   return (
     isPlanTab(file) ||
     isReleaseNotesTab(file) ||
     isCommitTab(file) ||
-    isAgentTab(file)
+    isAgentTab(file) ||
+    isModsTab(file)
   );
 }
 
@@ -514,6 +538,7 @@ export function isSessionChangesTab(
 export function editorTabKey(file: FilePaneTab): string {
   if (file.terminal) return `terminal:${file.id}`;
   if (file.agent) return `agent:${file.agent.sessionId}`;
+  if (file.mods) return `mods:${file.mods.sessionId}`;
   if (file.plan) return `plan:${file.plan.blockId}`;
   if (file.releaseNotes) return `release-notes:${file.releaseNotes.version}`;
   if (file.commit) return `commit:${file.cwd}:${file.commit.sha}`;
@@ -543,6 +568,7 @@ export function isPreviewableTab(file: FilePaneTab): boolean {
   return (
     !file.terminal &&
     !file.agent &&
+    !file.mods &&
     !file.plan &&
     !file.releaseNotes &&
     !file.changes

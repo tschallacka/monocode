@@ -17,6 +17,7 @@ import {
   isChangesTab,
   isCommitTab,
   isFilesystemTab,
+  isModsTab,
   isPlanTab,
   isReleaseNotesTab,
   isReviewTab,
@@ -151,6 +152,15 @@ export function surfaceTabPresentation(
       label: name,
       iconName: "AGENT",
       tooltip: `${name} — orchestration agent`,
+    };
+  }
+
+  if (isModsTab(file)) {
+    return {
+      name: "Mods",
+      label: "Mods",
+      iconName: "MODS",
+      tooltip: "Claude Code mods running in this session",
     };
   }
 

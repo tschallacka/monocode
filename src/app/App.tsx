@@ -95,6 +95,7 @@ import { useDragResize } from "../shared/hooks/useDragResize";
 import { beginLayoutTransition } from "../shared/lib/layoutTransition";
 import { noteProjectStep, Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
+import { ModStatusChips, ModToasts } from "../features/mods/ui/ModSurfaces";
 import { ResourcePressureNotice } from "../features/notifications/ui/ResourcePressureNotice";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { NewLayoutNotice } from "./shell/NewLayoutNotice";
@@ -259,6 +260,7 @@ import {
   openChangesTab,
   openCommitTab,
   newAgentTab,
+  newModsTab,
   openEditorTab,
   openSessionChangesTab,
   pinEditorFile,
@@ -4669,6 +4671,22 @@ function Workspace({
       );
     },
     [inboxAskPortal, closeMonoView],
+  );
+
+  const onOpenMods = useCallback(
+    (sessionId: string) => {
+      const cwd =
+        sessionsRef.current.find((entry) => entry.id === sessionId)?.cwd ??
+        projectCwdRef.current;
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId
+            ? openEditorTab(tab, newModsTab(cwd, sessionId), { pin: true })
+            : tab,
+        ),
+      );
+    },
+    [activeTabId],
   );
 
   const onOpenDiff = useCallback(
@@ -14812,6 +14830,14 @@ function Workspace({
         }
         projectTerminalOpen={!dockCovered && !!currentProjectDock?.open}
         inset={insetLayout}
+        modsSlot={
+          footerSession?.harness === "claude" ? (
+            <ModStatusChips
+              sessionId={footerSession.id}
+              onOpenMods={() => onOpenMods(footerSession.id)}
+            />
+          ) : null
+        }
       />
     );
 
@@ -15489,6 +15515,11 @@ function Workspace({
             }
             onFocusSession={onOpenApprovalSession}
             onApproval={onApproval}
+          />
+          <ModToasts
+            sessionId={
+              footerSession?.harness === "claude" ? footerSession.id : undefined
+            }
           />
           <ReminderNotices
             reminders={sessionReminders.due}

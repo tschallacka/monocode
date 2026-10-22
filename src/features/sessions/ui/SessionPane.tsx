@@ -106,6 +106,7 @@ import {
   visibleMonoCompletionMessages,
 } from "../../monos/model/monoMessaging";
 import { MessageQueue } from "./MessageQueue";
+import { ModAbovePrompt } from "../../mods/ui/ModSurfaces";
 import { useMonoTranscript } from "../../monos/hooks/useMonoTranscript";
 import { MONO_PAGE_TURNS } from "../data/sessionStore";
 import { useComposerDockMotion } from "./useComposerDockMotion";
@@ -805,6 +806,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk || !!agent));
   const composerDockMotion = useComposerDockMotion(dockComposer);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  // What a Claude Code mod draws above the prompt, as the terminal shows it.
+  const composerBand =
+    session.harness === "claude" && !remote ? (
+      <ModAbovePrompt sessionId={session.id} />
+    ) : null;
   const composer = (
     <Composer
       key={session.id}
@@ -1147,6 +1153,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         ref={composerDockMotion.centeredRef}
                         data-session-composer
                       >
+                        {composerBand}
                         {composer}
                       </div>
                     )
@@ -1542,7 +1549,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   />
                 </>
               ) : (
-                composer
+                <>
+                  {composerBand}
+                  {composer}
+                </>
               )}
             </div>
           ) : null}

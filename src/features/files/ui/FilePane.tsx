@@ -10,6 +10,7 @@ import {
   isAgentTab,
   isChangesTab,
   isCommitTab,
+  isModsTab,
   isPlanTab,
   isReleaseNotesTab,
   isReviewTab,
@@ -30,6 +31,7 @@ import {
   subscribeDiffViewer,
 } from "../../settings/model/settings";
 import { AgentTabView } from "../../sessions/ui/AgentTabView";
+import { ModsSurface } from "../../mods/ui/ModSurfaces";
 import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
@@ -181,6 +183,8 @@ function FilePaneComponent({
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
                 />
+              ) : isModsTab(file) ? (
+                <ModsSurface sessionId={file.mods.sessionId} />
               ) : isPlanTab(file) ? (
                 <PlanSurface
                   file={file}
