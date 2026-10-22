@@ -27,6 +27,7 @@ import {
   slugSkillName,
   type Skill,
 } from "./skills";
+import { setModCommands } from "../../mods/model/modHost";
 
 describe("native command composer behavior", () => {
   it("filters commands by alias and inserts their invocation with arguments intact", () => {
@@ -64,6 +65,20 @@ describe("native command composer behavior", () => {
       expect(isNativeCommandPrompt(text, "omp")).toBe(false);
     }
     expect(isNativeCommandPrompt("/review foo", "claude")).toBe(false);
+  });
+
+  it("sends a Claude session's mod command as typed", () => {
+    setModCommands("mod-session", [
+      { name: "boards", description: "", argumentHint: "", plugin: "boards" },
+    ]);
+    expect(isNativeCommandPrompt("/boards todo", "claude", "mod-session")).toBe(
+      true,
+    );
+    expect(isNativeCommandPrompt("/review", "claude", "mod-session")).toBe(false);
+    expect(isNativeCommandPrompt("/boards", "claude", "other-session")).toBe(
+      false,
+    );
+    expect(isNativeCommandPrompt("/boards", "pi", "mod-session")).toBe(false);
   });
 });
 

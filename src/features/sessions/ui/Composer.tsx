@@ -1479,7 +1479,11 @@ export function Composer({
       !remote && !hideTopBar && !command.planning
         ? consumeOrchestratorCommand(command.text)
         : { text: command.text, matched: false };
-    const text = isNativeCommandPrompt(orchestratorCommand.text, harness)
+    const text = isNativeCommandPrompt(
+      orchestratorCommand.text,
+      harness,
+      sessionId,
+    )
       ? orchestratorCommand.text
       : composeInboxMessage(inboxCard, orchestratorCommand.text);
     const submittedText =

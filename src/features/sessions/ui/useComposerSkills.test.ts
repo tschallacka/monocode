@@ -16,7 +16,52 @@ import {
   nextComposerSkillContextToken,
   pickerSkillLoadOptions,
   visibleComposerSkills,
+  withModCommands,
 } from "./useComposerSkills";
+
+describe("mod commands in the picker", () => {
+  const fileSkill: Skill = {
+    kind: "file",
+    name: "boards",
+    description: "A skill that happens to share the name.",
+    invocation: "boards",
+    path: "/skills/boards/SKILL.md",
+    scope: "user",
+    source: "claude",
+  };
+  const other: Skill = { ...fileSkill, name: "review", invocation: "review" };
+  const boards = {
+    name: "boards",
+    description: "Show the boards",
+    argumentHint: "[board]",
+    plugin: "boards",
+  };
+
+  it("leads with the session's mod commands as native commands", () => {
+    expect(withModCommands([other], [boards])).toEqual([
+      {
+        kind: "native",
+        name: "boards",
+        description: "Show the boards",
+        invocation: "boards",
+        source: "claude",
+        origin: "boards",
+        inputHint: "[board]",
+      },
+      other,
+    ]);
+  });
+
+  it("drops a file skill a mod command shares its name with", () => {
+    const merged = withModCommands([fileSkill, other], [boards]);
+    expect(merged.map((skill) => skill.kind)).toEqual(["native", "file"]);
+  });
+
+  it("leaves the list alone without mod commands", () => {
+    const skills = [fileSkill];
+    expect(withModCommands(skills, [])).toBe(skills);
+  });
+});
 
 const piSkill: Skill = {
   kind: "native",

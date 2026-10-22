@@ -11,6 +11,7 @@ import {
   connectModHost,
   disconnectModHost,
   noteModPush,
+  setModCommands,
   settleModResponse,
 } from "../../../../features/mods/model/modHost";
 import {
@@ -54,6 +55,7 @@ import {
   parseControlCancelId,
   parseControlRequest,
   parseControlResponse,
+  modCommandsFromInitialize,
   parseJsonLine,
   parseTaskNotification,
   parseTaskProgress,
@@ -150,6 +152,8 @@ type Live = {
   visibleQuestionId: number | null;
   nextApprovalUiId: number;
   nextControlId: number;
+  /** The `initialize` ask, whose answer lists the session's commands. */
+  initRequestId: string | null;
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
   agentTasks: Map<string, LiveAgentTask>;
@@ -521,6 +525,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     visibleQuestionId: null,
     nextApprovalUiId: 1,
     nextControlId: 1,
+    initRequestId: null,
     toolsByIndex: new Map(),
     toolsById: new Map(),
     agentTasks: new Map(),
@@ -590,9 +595,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   });
 
   try {
+    live.initRequestId = nextControlId(live);
     await writeJson(
       input.sessionId,
-      buildControlRequest(nextControlId(live), { subtype: "initialize" }),
+      buildControlRequest(live.initRequestId, { subtype: "initialize" }),
     );
     await waitForInit(live, INIT_TIMEOUT_MS);
     live.onEvent({
@@ -755,6 +761,9 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       )
     ) {
       return;
+    }
+    if (response?.ok && response.requestId === live.initRequestId) {
+      setModCommands(sessionId, modCommandsFromInitialize(response.payload));
     }
     markInitialized(live);
     return;

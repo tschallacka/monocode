@@ -17,6 +17,7 @@ import {
   isSubagentMessage,
   isTodoTool,
   listModelsFromControlResponse,
+  modCommandsFromInitialize,
   normalizeClaudeCliEffort,
   parseBackgroundTasks,
   parseClaudeVersion,
@@ -501,6 +502,33 @@ describe("list_models catalog", () => {
       },
     },
   };
+
+  it("keeps only the commands a mod registered from initialize", () => {
+    // As 2.1.306 answers: skills and built-ins name no plugin.
+    expect(
+      modCommandsFromInitialize({
+        commands: [
+          { name: "decisions", description: "A skill (user)", argumentHint: "" },
+          { name: "team-onboarding", description: "", argumentHint: "", builtin: true },
+          {
+            name: "boards",
+            description: "Show the boards",
+            argumentHint: "[board]",
+            plugin: "boards",
+          },
+          { plugin: "nameless" },
+        ],
+      }),
+    ).toEqual([
+      {
+        name: "boards",
+        description: "Show the boards",
+        argumentHint: "[board]",
+        plugin: "boards",
+      },
+    ]);
+    expect(modCommandsFromInitialize(null)).toEqual([]);
+  });
 
   it("reads rows from the matching control response", () => {
     expect(listModelsFromControlResponse(listed, "list_1")).toHaveLength(6);

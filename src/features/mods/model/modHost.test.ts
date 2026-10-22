@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   connectModHost,
   disconnectModHost,
+  modCommandInPrompt,
   modHostSnapshot,
   noteModPush,
   pressModElement,
   renderModComponent,
+  setModCommands,
   settleModResponse,
   subscribeModHost,
+  subscribeModPaneOpened,
   type ModTransport,
 } from "./modHost";
 
@@ -90,6 +93,33 @@ describe("mod host pushes", () => {
 
   it("leaves records that are not ui_ pushes to the caller", () => {
     expect(noteModPush(newSessionId(), { subtype: "status" })).toBe(false);
+  });
+});
+
+describe("mod commands", () => {
+  const boards = {
+    name: "boards",
+    description: "Show the boards",
+    argumentHint: "",
+    plugin: "boards",
+  };
+
+  it("finds the mod command a prompt starts with, in that session only", () => {
+    const id = newSessionId();
+    setModCommands(id, [boards]);
+    expect(modCommandInPrompt("/boards", id)).toEqual(boards);
+    expect(modCommandInPrompt("  /boards open todo", id)).toEqual(boards);
+    expect(modCommandInPrompt("/boardsx", id)).toBeNull();
+    expect(modCommandInPrompt("show /boards", id)).toBeNull();
+    expect(modCommandInPrompt("/boards", newSessionId())).toBeNull();
+    expect(modCommandInPrompt("/boards", undefined)).toBeNull();
+  });
+
+  it("forgets a session's commands when its process ends", () => {
+    const id = newSessionId();
+    setModCommands(id, [boards]);
+    disconnectModHost(id);
+    expect(modHostSnapshot(id).commands).toEqual([]);
   });
 });
 
@@ -193,6 +223,43 @@ describe("mod host requests", () => {
     await expect(
       renderModComponent(id, "Pane", "p", {}, viewport),
     ).rejects.toThrow("No Claude session");
+  });
+
+  it("announces a pane shown after attach, not the ones open at attach", async () => {
+    const id = newSessionId();
+    const opened = vi.fn();
+    const unsubscribe = subscribeModPaneOpened(opened);
+    const { transport, answer } = fakeTransport(id);
+    // A mod that opens a pane as the session starts, before the attach.
+    noteModPush(id, {
+      subtype: "ui_panes",
+      panes: [{ id: "probe", title: "Probe", plugin: "m" }],
+      shown_id: "probe",
+    });
+    const connected = connectModHost(id, transport, viewport);
+    await flush();
+    answer(0, {});
+    await flush();
+    answer(1, {
+      panes: [{ id: "probe", title: "Probe", plugin: "m" }],
+      shown_id: "probe",
+    });
+    await connected;
+    expect(opened).not.toHaveBeenCalled();
+
+    const board = {
+      subtype: "ui_panes",
+      panes: [
+        { id: "probe", title: "Probe", plugin: "m" },
+        { id: "todo", title: "Todo", plugin: "todo-board" },
+      ],
+      shown_id: "todo",
+    };
+    noteModPush(id, board);
+    noteModPush(id, board);
+    expect(opened).toHaveBeenCalledTimes(1);
+    expect(opened).toHaveBeenCalledWith(id, "todo");
+    unsubscribe();
   });
 
   it("times out an ask nobody answers", async () => {

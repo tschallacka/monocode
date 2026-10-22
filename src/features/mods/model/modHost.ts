@@ -25,6 +25,14 @@ export type ModToast = {
 
 export type ModLog = { id: string; plugin: string; text: string };
 
+/** A slash command a mod registered (`$.command.register`). */
+export type ModCommand = {
+  name: string;
+  description: string;
+  argumentHint: string;
+  plugin: string;
+};
+
 export type ModPress = { plugin: string; handle: number };
 
 export type ModNode = {
@@ -52,6 +60,7 @@ export type ModHostSnapshot = {
   statuses: Array<{ plugin: string; text: string }>;
   toasts: ModToast[];
   logs: ModLog[];
+  commands: ModCommand[];
   /** Moves on every redraw request; mounted instances draw again. */
   renderVersion: number;
 };
@@ -73,6 +82,8 @@ type Host = {
   pending: Map<string, Pending>;
   listeners: Set<() => void>;
   nextLocalId: number;
+  /** The roster read at attach is in: later pushes show panes on request. */
+  rosterSeen: boolean;
 };
 
 const EMPTY: ModHostSnapshot = {
@@ -83,10 +94,26 @@ const EMPTY: ModHostSnapshot = {
   statuses: [],
   toasts: [],
   logs: [],
+  commands: [],
   renderVersion: 0,
 };
 
 const hosts = new Map<string, Host>();
+const paneOpenedListeners = new Set<
+  (sessionId: string, paneId: string) => void
+>();
+
+/**
+ * A mod showed a pane after the session attached: a board tool Claude called,
+ * a command the user ran, a mod's own `$.ui.open`. Panes a mod opens as the
+ * session starts are already in the roster and never announced.
+ */
+export function subscribeModPaneOpened(
+  listener: (sessionId: string, paneId: string) => void,
+): () => void {
+  paneOpenedListeners.add(listener);
+  return () => paneOpenedListeners.delete(listener);
+}
 
 function hostFor(sessionId: string): Host {
   let host = hosts.get(sessionId);
@@ -97,6 +124,7 @@ function hostFor(sessionId: string): Host {
       pending: new Map(),
       listeners: new Set(),
       nextLocalId: 0,
+      rosterSeen: false,
     };
     hosts.set(sessionId, host);
   }
@@ -145,7 +173,28 @@ export async function connectModHost(
     subtype: "ui_panes",
     client_id: MOD_CLIENT_ID,
   });
-  applyPanes(host, roster);
+  applyPanes(sessionId, host, roster);
+  host.rosterSeen = true;
+}
+
+/** The commands the session's mods registered, as `initialize` listed them. */
+export function setModCommands(sessionId: string, commands: ModCommand[]) {
+  update(hostFor(sessionId), { commands });
+}
+
+/** The mod command a prompt runs (`/boards`, `/todo-board x`), if any. */
+export function modCommandInPrompt(
+  text: string,
+  sessionId: string | undefined,
+): ModCommand | null {
+  if (!sessionId) return null;
+  const name = /^\s*\/([^\s/\\]+)(?=\s|$)/.exec(text)?.[1];
+  if (!name) return null;
+  return (
+    modHostSnapshot(sessionId).commands.find(
+      (command) => command.name === name,
+    ) ?? null
+  );
 }
 
 /** The process ended: its mods, panes and pending asks go with it. */
@@ -153,6 +202,7 @@ export function disconnectModHost(sessionId: string) {
   const host = hosts.get(sessionId);
   if (!host) return;
   host.transport = null;
+  host.rosterSeen = false;
   for (const [, pending] of host.pending) {
     clearTimeout(pending.timer);
     pending.reject(new Error("The Claude session ended"));
@@ -191,7 +241,7 @@ export function noteModPush(
   const text = typeof record.text === "string" ? record.text : "";
   switch (subtype) {
     case "ui_panes":
-      applyPanes(host, record);
+      applyPanes(sessionId, host, record);
       break;
     case "ui_status": {
       const statuses = host.snapshot.statuses.filter(
@@ -236,7 +286,12 @@ export function dismissModToast(sessionId: string, toastId: string) {
   });
 }
 
-function applyPanes(host: Host, record: Record<string, unknown>) {
+function applyPanes(
+  sessionId: string,
+  host: Host,
+  record: Record<string, unknown>,
+) {
+  const previous = host.snapshot;
   const panes = Array.isArray(record.panes)
     ? record.panes.flatMap((raw): ModPane[] => {
         const pane = raw as Record<string, unknown>;
@@ -253,11 +308,20 @@ function applyPanes(host: Host, record: Record<string, unknown>) {
     : [];
   const pick = (key: string) =>
     typeof record[key] === "string" ? (record[key] as string) : null;
+  const shownPaneId = pick("shown_id");
   update(host, {
     panes,
-    shownPaneId: pick("shown_id"),
+    shownPaneId,
     focusRequestedPaneId: pick("focus_requested_id"),
   });
+  const newlyShown =
+    shownPaneId &&
+    (shownPaneId !== previous.shownPaneId ||
+      !previous.panes.some((pane) => pane.id === shownPaneId));
+  if (host.rosterSeen && newlyShown) {
+    for (const listener of paneOpenedListeners)
+      listener(sessionId, shownPaneId);
+  }
 }
 
 function request(
