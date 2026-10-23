@@ -95,6 +95,8 @@ import { useDragResize } from "../shared/hooks/useDragResize";
 import { beginLayoutTransition } from "../shared/lib/layoutTransition";
 import { noteProjectStep, Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
+import { ClaudeCodeSessionPicker } from "../features/sessions/ui/ClaudeCodeSessionPicker";
+import { importClaudeCodeSession } from "../features/sessions/model/claudeCodeImport";
 import { ResourcePressureNotice } from "../features/notifications/ui/ResourcePressureNotice";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { NewLayoutNotice } from "./shell/NewLayoutNotice";
@@ -1586,6 +1588,7 @@ function Workspace({
     useState<EditorNavigationTarget | null>(null);
   const editorNavigationToken = useRef(0);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const [claudeCodePickerOpen, setClaudeCodePickerOpen] = useState(false);
   const [filePickerInitialQuery, setFilePickerInitialQuery] = useState("");
   const [filePickerResetToken, setFilePickerResetToken] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(
@@ -15442,8 +15445,23 @@ function Workspace({
               onOpenFile={onOpenFile}
               onRunAction={(id) => {
                 if (id === "reload") actions.current.onReload();
+                if (id === "open-claude-code-session") {
+                  setFilePickerOpen(false);
+                  setClaudeCodePickerOpen(true);
+                }
               }}
               onClose={() => setFilePickerOpen(false)}
+            />
+          ) : null}
+
+          {claudeCodePickerOpen ? (
+            <ClaudeCodeSessionPicker
+              onPick={async (source) => {
+                const sessionId = await importClaudeCodeSession(source);
+                await onSelectHistorySession(sessionId);
+                setClaudeCodePickerOpen(false);
+              }}
+              onClose={() => setClaudeCodePickerOpen(false)}
             />
           ) : null}
 

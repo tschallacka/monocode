@@ -39,6 +39,7 @@ export function reloadActionHint(mod = MOD, shift = SHIFT) {
 
 const ACTIONS: Action[] = [
   { id: "reload", label: "Reload MonoCode", hint: reloadActionHint() },
+  { id: "open-claude-code-session", label: "Open Claude Code session…" },
 ];
 
 type Props = {

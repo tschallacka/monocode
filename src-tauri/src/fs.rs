@@ -204,26 +204,40 @@ pub fn claude_shell_commands(
     if tool_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let config_dir = match provider_account_id.as_deref() {
-        Some(id) if id != "default" => crate::harness::provider_account_path(&app, "claude", id)?,
-        _ => match std::env::var_os("CLAUDE_CONFIG_DIR") {
-            Some(path) => PathBuf::from(path),
-            None => {
-                PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(".claude")
-            }
-        },
-    };
-    let transcript_name = format!("{provider_session_id}.jsonl");
-    let root = config_dir.join("projects");
-    let Some(path) = std::fs::read_dir(root).ok().and_then(|projects| {
-        projects.flatten().find_map(|project| {
-            let candidate = project.path().join(&transcript_name);
-            candidate.is_file().then_some(candidate)
-        })
-    }) else {
+    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    let Some(path) = find_claude_transcript(&config_dir, &provider_session_id) else {
         return Ok(HashMap::new());
     };
     claude_shell_commands_from_file(&path, &tool_ids)
+}
+
+/// The Claude config dir an account's sessions live in: its own profile, or
+/// for the default account `CLAUDE_CONFIG_DIR` else `~/.claude`.
+pub(crate) fn claude_config_dir(
+    app: &AppHandle,
+    provider_account_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    match provider_account_id {
+        Some(id) if id != "default" => crate::harness::provider_account_path(app, "claude", id),
+        _ => match std::env::var_os("CLAUDE_CONFIG_DIR") {
+            Some(path) => Ok(PathBuf::from(path)),
+            None => Ok(
+                PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(".claude"),
+            ),
+        },
+    }
+}
+
+/// A session's transcript, found by id in whichever project folder holds it.
+pub(crate) fn find_claude_transcript(config_dir: &Path, session_id: &str) -> Option<PathBuf> {
+    let transcript_name = format!("{session_id}.jsonl");
+    std::fs::read_dir(config_dir.join("projects"))
+        .ok()?
+        .flatten()
+        .find_map(|project| {
+            let candidate = project.path().join(&transcript_name);
+            candidate.is_file().then_some(candidate)
+        })
 }
 
 fn claude_shell_commands_from_file(

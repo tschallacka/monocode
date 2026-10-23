@@ -8,6 +8,7 @@ mod azure_devops;
 mod background_work;
 mod chat_background;
 mod checkpoint;
+mod claude_code_sessions;
 mod codex_mono_store;
 mod control;
 pub mod control_cli;
@@ -468,6 +469,8 @@ pub fn run() {
             fs::omp_session_interjections,
             fs::omp_active_assistant_texts,
             fs::claude_shell_commands,
+            claude_code_sessions::claude_code_sessions,
+            claude_code_sessions::claude_code_transcript,
             fs::write_text_file,
             skills::list_skills,
             search::search_project,
