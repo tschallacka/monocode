@@ -475,6 +475,7 @@ pub fn run() {
             fs::claude_shell_commands,
             claude_code_sessions::claude_code_sessions,
             claude_code_sessions::claude_code_transcript,
+            claude_code_sessions::claude_subagent_transcript,
             fs::write_text_file,
             skills::list_skills,
             search::search_project,

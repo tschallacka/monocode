@@ -34,3 +34,18 @@ export function readClaudeCodeTranscript(
     providerAccountId,
   });
 }
+
+/**
+ * The records of the subagent that Agent call `toolUseId` spawned, read from
+ * its own transcript, or null when Claude Code has not written one.
+ */
+export function readClaudeSubagentTranscript(
+  sessionId: string,
+  toolUseId: string,
+  providerAccountId?: string,
+): Promise<Record<string, unknown>[] | null> {
+  return invoke<Record<string, unknown>[] | null>(
+    "claude_subagent_transcript",
+    { sessionId, toolUseId, providerAccountId },
+  );
+}

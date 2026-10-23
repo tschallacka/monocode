@@ -1,4 +1,8 @@
-import type { Session } from "../../../../features/sessions/model/session";
+import {
+  newSession,
+  type Block,
+  type Session,
+} from "../../../../features/sessions/model/session";
 import {
   appendUser,
   applyHarnessEvents,
@@ -63,10 +67,12 @@ function promptText(record: Record<string, unknown>): string | null {
  * A Claude Code transcript's main thread as turns of the events a live Claude
  * session emits, built the way `claude.ts` builds them, so an imported
  * session renders as if it had run here. Records before the first prompt,
- * and sidechain (subagent) records, are left out.
+ * and sidechain (subagent) records, are left out; `sidechain` reads a
+ * subagent's own file, where every record is one.
  */
 export function claudeTranscriptTurns(
   records: readonly Record<string, unknown>[],
+  { sidechain = false }: { sidechain?: boolean } = {},
 ): ClaudeTranscriptTurn[] {
   const turns: ClaudeTranscriptTurn[] = [];
   const tools = new Map<
@@ -76,7 +82,7 @@ export function claudeTranscriptTurns(
   let turn: ClaudeTranscriptTurn | null = null;
 
   for (const record of records) {
-    if (record.isSidechain === true) continue;
+    if (record.isSidechain === true && !sidechain) continue;
     const at = recordTime(record);
     if (record.type === "user") {
       const text = promptText(record);
@@ -150,9 +156,10 @@ export function claudeTranscriptTurns(
 export function withClaudeTranscript(
   session: Session,
   records: readonly Record<string, unknown>[],
+  options?: { sidechain?: boolean },
 ): Session {
   let next = session;
-  for (const turn of claudeTranscriptTurns(records)) {
+  for (const turn of claudeTranscriptTurns(records, options)) {
     next = appendUser(next, turn.text);
     if (turn.startedAt !== undefined) {
       const startedAt = turn.startedAt;
@@ -167,4 +174,17 @@ export function withClaudeTranscript(
     next = stopStreaming(next, turn.endedAt ?? turn.startedAt);
   }
   return next;
+}
+
+/**
+ * A subagent's run, from its own transcript, as the blocks a session shows.
+ * Its brief, the first prompt, is left out: the view shows it as the header.
+ */
+export function claudeSubagentBlocks(
+  records: readonly Record<string, unknown>[],
+): Block[] {
+  const run = withClaudeTranscript(newSession("claude", ""), records, {
+    sidechain: true,
+  });
+  return run.blocks[0]?.role === "user" ? run.blocks.slice(1) : run.blocks;
 }
