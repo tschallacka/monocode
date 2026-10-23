@@ -4181,7 +4181,7 @@ function SubagentPanel({
       type="button"
       aria-label={`Open ${name}'s run`}
       title="Open this run in the pane"
-      onClick={() => enter(block.id)}
+      onClick={() => enter(block)}
       className="-mr-1 ml-1 shrink-0 rounded p-1 text-content/35 transition-colors duration-200 hover:text-content/80"
     >
       <Maximize2 className="size-3.5" strokeWidth={1.75} />

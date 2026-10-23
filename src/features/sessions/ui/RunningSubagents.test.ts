@@ -237,3 +237,53 @@ describe("subagentBackgroundTasks", () => {
     expect(subagentBackgroundTasks(tasks, runs).size).toBe(0);
   });
 });
+
+describe("RunningSubagents tree", () => {
+  const a = run("a", "Audit the module");
+  const b = run("run:b", "Check the templates");
+  const c = run("run:c", "Read one template");
+  const childrenOf = (block: Block) =>
+    block.id === "a" ? [b] : block.id === "run:b" ? [c] : [];
+  const liveIds = new Set(["a", "run:b", "run:c"]);
+  const listed = () =>
+    rows()
+      .map((row) => row.closest<HTMLElement>("[data-running-subagent]"))
+      .map((line) => [
+        line?.dataset.runningSubagent ?? "main",
+        line?.dataset.depth ?? "0",
+      ]);
+
+  it("folds a run's working subagents into a count until it is opened", () => {
+    render({ runs: [a], liveIds, childrenOf });
+    expect(listed()).toEqual([
+      ["main", "0"],
+      ["a", "0"],
+    ]);
+    expect(rows()[1].getAttribute("aria-label")).toContain(
+      "1 subagent running",
+    );
+    expect(rows()[1].textContent).toContain("+1");
+  });
+
+  it("unfolds the opened run to show what it spawned", () => {
+    render({ runs: [a], liveIds, childrenOf, viewedId: "a" });
+    expect(listed()).toEqual([
+      ["main", "0"],
+      ["a", "0"],
+      ["run:b", "1"],
+    ]);
+  });
+
+  it("keeps the whole branch open down to a nested run being viewed", () => {
+    const onView = vi.fn();
+    render({ runs: [a], liveIds, childrenOf, viewedId: "run:c", onView });
+    expect(listed()).toEqual([
+      ["main", "0"],
+      ["a", "0"],
+      ["run:b", "1"],
+      ["run:c", "2"],
+    ]);
+    act(() => rows()[2].click());
+    expect(onView).toHaveBeenCalledWith("run:b");
+  });
+});

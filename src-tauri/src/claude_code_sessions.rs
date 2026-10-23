@@ -327,6 +327,57 @@ fn find_subagent_transcript(transcript: &Path, tool_use_id: &str) -> Option<Path
         .filter(|path| path.is_file())
 }
 
+/// One subagent run of a session, as its `.meta.json` and file describe it.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentRun {
+    pub agent_id: String,
+    /// The Agent call that spawned it, in its parent's transcript.
+    pub tool_use_id: String,
+    /// The run that spawned it; `None` for one the session spawned itself.
+    pub parent_agent_id: Option<String>,
+    pub description: Option<String>,
+    pub agent_type: Option<String>,
+    pub depth: u32,
+    /// Claude Code marks a run finished; older versions never did.
+    pub finished: bool,
+    /// Epoch ms its transcript was last written.
+    pub modified_ms: u64,
+}
+
+/// Every subagent run of the session whose transcript is `transcript`, at any
+/// depth: Claude Code keeps them all in one folder, linked by `parentAgentId`.
+fn subagent_runs(transcript: &Path) -> Vec<SubagentRun> {
+    let folder = transcript.with_extension("").join("subagents");
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter_map(|meta| {
+            let agent = meta.file_name()?.to_str()?.strip_suffix(".meta.json")?;
+            let value: Value = serde_json::from_str(&std::fs::read_to_string(&meta).ok()?).ok()?;
+            let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+            let modified_ms = std::fs::metadata(meta.with_file_name(format!("{agent}.jsonl")))
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_millis() as u64);
+            Some(SubagentRun {
+                agent_id: agent.strip_prefix("agent-").unwrap_or(agent).to_string(),
+                tool_use_id: text("toolUseId")?,
+                parent_agent_id: text("parentAgentId"),
+                description: text("description"),
+                agent_type: text("agentType"),
+                depth: value.get("spawnDepth").and_then(Value::as_u64).unwrap_or(1) as u32,
+                finished: value.get("finished").and_then(Value::as_bool) == Some(true),
+                modified_ms,
+            })
+        })
+        .collect()
+}
+
 fn is_tool_use_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -380,6 +431,22 @@ pub fn claude_subagent_transcript(
         Some(path) => read_records(&path, true).map(Some),
         None => Ok(None),
     }
+}
+
+/// The session's subagent runs at every depth, for the tree of live ones.
+#[tauri::command(async)]
+pub fn claude_subagent_runs(
+    app: AppHandle,
+    provider_account_id: Option<String>,
+    session_id: String,
+) -> Result<Vec<SubagentRun>, String> {
+    if !is_session_id(&session_id) {
+        return Err("Invalid Claude session id".into());
+    }
+    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    Ok(find_claude_transcript(&config_dir, &session_id)
+        .map(|transcript| subagent_runs(&transcript))
+        .unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -436,6 +503,34 @@ mod tests {
         assert!(transcript_records(&path).unwrap().is_empty());
         assert!(find_subagent_transcript(&transcript, "toolu_missing").is_none());
         assert!(!is_tool_use_id("../agent"));
+
+        std::fs::write(
+            folder.join("agent-a3.meta.json"),
+            r#"{"agentType":"fork","toolUseId":"toolu_three","parentAgentId":"a2","spawnDepth":2,"finished":true,"description":"Nested audit"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            folder.join("agent-a3.jsonl"),
+            r#"{"type":"user","isSidechain":true,"message":{"content":"Nested brief"}}"#,
+        )
+        .unwrap();
+        let mut runs = subagent_runs(&transcript);
+        runs.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[0].agent_id, "a1");
+        assert_eq!(runs[0].parent_agent_id, None);
+        assert_eq!(runs[0].depth, 1);
+        assert!(!runs[0].finished);
+        assert!(runs[0].modified_ms > 0);
+        assert_eq!(runs[2].tool_use_id, "toolu_three");
+        assert_eq!(runs[2].parent_agent_id.as_deref(), Some("a2"));
+        assert_eq!(runs[2].depth, 2);
+        assert!(runs[2].finished);
+        // A nested run's transcript is found by its own Agent call too.
+        assert_eq!(
+            find_subagent_transcript(&transcript, "toolu_three"),
+            Some(folder.join("agent-a3.jsonl"))
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

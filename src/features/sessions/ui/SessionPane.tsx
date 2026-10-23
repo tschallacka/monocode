@@ -1,7 +1,18 @@
 import { GripVertical, X } from "../../../shared/ui/icons";
 import { ThreadLink, threadLinkId } from "../../coordinator/ui/ThreadLink";
 import { ThreadStepsBar } from "../../coordinator/ui/ThreadStepsBar";
-import { SubagentAccessContext, subagentRunLoader } from "./subagentAccess";
+import {
+  SubagentAccessContext,
+  subagentRunLister,
+  subagentRunLoader,
+  useSubagentRunList,
+} from "./subagentAccess";
+import {
+  activeNestedRuns,
+  isNestedRunId,
+  nestedRunBlock,
+  nestedRunId,
+} from "../model/subagentTree";
 import { MarkdownLinkContext } from "./AgentMarkdown";
 import {
   coordinatorCompactAt,
@@ -563,53 +574,121 @@ const LocalSessionPane = memo(function LocalSessionPane({
   }, [session.id, editLastTurnSupported]);
   // A delegated run swapped in for the transcript from the composer dock.
   const [viewedSubagentId, setViewedSubagentId] = useState<string | null>(null);
-  useEffect(() => setViewedSubagentId(null), [session.id]);
+  // Runs a subagent spawned that were entered from inside another run, so one
+  // stays viewable once it no longer shows in the tree of working runs.
+  const [enteredRuns, setEnteredRuns] = useState<ReadonlyMap<string, Block>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    setViewedSubagentId(null);
+    setEnteredRuns(new Map());
+  }, [session.id]);
   const liveSubagents = useMemo(
     () => (session.busy ? runningSubagents(session.blocks) : []),
     [session.busy, session.blocks],
   );
+  const runSource = useMemo(
+    () => ({
+      harness: session.harness,
+      providerSessionId: session.providerSessionId,
+      providerAccountId: session.providerAccountId,
+    }),
+    [session.harness, session.providerSessionId, session.providerAccountId],
+  );
+  const listRuns = useMemo(
+    () => subagentRunLister(runSource, !remoteSession),
+    [runSource, remoteSession],
+  );
+  // The runs those runs spawned in turn, at every depth, read from Claude
+  // Code's own record of them while anything is running or one is open.
+  const allRuns = useSubagentRunList(
+    listRuns,
+    liveSubagents.length > 0 ||
+      (viewedSubagentId != null && isNestedRunId(viewedSubagentId)),
+  );
+  const nestedRuns = useMemo(
+    () =>
+      activeNestedRuns(
+        allRuns,
+        new Set(liveSubagents.flatMap((block) => block.tool?.callId ?? [])),
+        Date.now(),
+      ),
+    [allRuns, liveSubagents],
+  );
+  const nestedLive = useMemo(() => {
+    const blocks = new Map<string, Block>();
+    for (const children of nestedRuns.values()) {
+      for (const run of children) {
+        const block = nestedRunBlock(run, true);
+        blocks.set(block.id, block);
+      }
+    }
+    return blocks;
+  }, [nestedRuns]);
+  const nestedChildren = useCallback(
+    (block: Block) =>
+      (nestedRuns.get(block.tool?.callId ?? "") ?? []).flatMap(
+        (run) => nestedLive.get(nestedRunId(run.toolUseId)) ?? [],
+      ),
+    [nestedRuns, nestedLive],
+  );
   const viewedSubagent = viewedSubagentId
-    ? session.blocks.find((block) => block.id === viewedSubagentId)
+    ? (session.blocks.find((block) => block.id === viewedSubagentId) ??
+      nestedLive.get(viewedSubagentId) ??
+      enteredRuns.get(viewedSubagentId))
     : undefined;
   useEffect(() => {
     if (viewedSubagentId && !viewedSubagent) setViewedSubagentId(null);
   }, [viewedSubagentId, viewedSubagent]);
   // A finished run stays listed while it is open, so Main is still there to
-  // swap back to.
-  const subagentRuns = useMemo(
-    () =>
-      viewedSubagent && !liveSubagents.includes(viewedSubagent)
-        ? session.blocks.filter(
-            (block) =>
-              block === viewedSubagent || liveSubagents.includes(block),
-          )
-        : liveSubagents,
-    [viewedSubagent, liveSubagents, session.blocks],
-  );
+  // swap back to. A working nested run already shows in its branch.
+  const subagentRuns = useMemo(() => {
+    if (
+      !viewedSubagent ||
+      liveSubagents.includes(viewedSubagent) ||
+      nestedLive.has(viewedSubagent.id)
+    ) {
+      return liveSubagents;
+    }
+    if (isNestedRunId(viewedSubagent.id)) {
+      return [...liveSubagents, viewedSubagent];
+    }
+    return session.blocks.filter(
+      (block) => block === viewedSubagent || liveSubagents.includes(block),
+    );
+  }, [viewedSubagent, liveSubagents, nestedLive, session.blocks]);
   const liveSubagentIds = useMemo(
     () => new Set(liveSubagents.map((block) => block.id)),
     [liveSubagents],
   );
+  const liveRunIds = useMemo(
+    () => new Set([...liveSubagentIds, ...nestedLive.keys()]),
+    [liveSubagentIds, nestedLive],
+  );
+  const blocksRef = useRef(session.blocks);
+  blocksRef.current = session.blocks;
+  // Enters a run at any depth. One of the session's own blocks is viewed by
+  // its id; a run a subagent spawned is viewed by its Agent call.
+  const enterRun = useCallback((block: Block) => {
+    if (blocksRef.current.some((own) => own.id === block.id)) {
+      setViewedSubagentId(block.id);
+      return;
+    }
+    const callId = block.tool?.callId;
+    if (!callId) return;
+    const id = nestedRunId(callId);
+    setEnteredRuns((runs) => new Map(runs).set(id, { ...block, id }));
+    setViewedSubagentId(id);
+  }, []);
   // Any run, finished or not, can be entered from its row in the transcript,
   // and a local Claude run is read in full from its own transcript.
   const subagentAccess = useMemo(
     () => ({
-      enter: setViewedSubagentId,
-      loadRun: subagentRunLoader(
-        {
-          harness: session.harness,
-          providerSessionId: session.providerSessionId,
-          providerAccountId: session.providerAccountId,
-        },
-        !remoteSession,
-      ),
+      enter: enterRun,
+      loadRun: subagentRunLoader(runSource, !remoteSession),
+      listRuns,
     }),
-    [
-      session.harness,
-      session.providerSessionId,
-      session.providerAccountId,
-      remoteSession,
-    ],
+    [enterRun, runSource, remoteSession, listRuns],
   );
   // A background run's own task, so its line can stop it and the commands
   // below do not list it twice.
@@ -962,13 +1041,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
         subagentRuns.length ? (
           <RunningSubagents
             runs={subagentRuns}
-            liveIds={liveSubagentIds}
+            liveIds={liveRunIds}
+            childrenOf={nestedChildren}
             viewedId={viewedSubagent ? viewedSubagent.id : null}
             // Approvals and questions show in Main only; stay there until
             // they are answered.
             onView={(blockId) => {
-              if (blockId === null || !needsAnswer)
-                setViewedSubagentId(blockId);
+              if (blockId !== null && needsAnswer) return;
+              const nested = blockId ? nestedLive.get(blockId) : undefined;
+              if (nested) enterRun(nested);
+              else setViewedSubagentId(blockId);
             }}
             stoppable={new Set(subagentTasks.keys())}
             onStop={
@@ -1388,7 +1470,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         block={viewedSubagent}
                         sessionId={remoteSession ? undefined : session.id}
                         cwd={workCwd}
-                        live={liveSubagentIds.has(viewedSubagent.id)}
+                        live={liveRunIds.has(viewedSubagent.id)}
                         onOpenFile={onOpenFile}
                         onOpenDiff={onOpenDiff}
                       />

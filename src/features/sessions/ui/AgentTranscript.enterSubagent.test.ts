@@ -26,7 +26,7 @@ const blocks: Block[] = [
   },
 ];
 
-function render(enter?: (blockId: string) => void) {
+function render(enter?: (block: Block) => void) {
   const transcript = createElement(AgentTranscript, { blocks, busy: false });
   return renderToStaticMarkup(
     enter
