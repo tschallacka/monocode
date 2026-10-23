@@ -11,7 +11,11 @@ import {
   toolCallState,
 } from "../model/transcriptActivity";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { MessageSquare, Square } from "../../../shared/ui/icons";
+import {
+  CornerDownRight,
+  MessageSquare,
+  Square,
+} from "../../../shared/ui/icons";
 
 type Props = {
   /** The runs listed under Main: the live ones, plus the one being viewed. */
@@ -26,7 +30,35 @@ type Props = {
   onStop?: (blockId: string) => void;
   /** Runs whose background task can be stopped from their line. */
   stoppable?: ReadonlySet<string>;
+  /** The runs still working under a run, which the dock nests beneath it. */
+  childrenOf?: (block: Block) => Block[];
 };
+
+const NO_CHILDREN = (): Block[] => [];
+
+/**
+ * The runs under `block` that are open in the dock: the viewed run and every
+ * run above it unfold, so the branch being followed shows what it spawned.
+ */
+function unfoldedIds(
+  runs: Block[],
+  childrenOf: (block: Block) => Block[],
+  viewedId: string | null,
+): Set<string> {
+  const unfolded = new Set<string>();
+  const visit = (block: Block, seen: Set<string>): boolean => {
+    if (seen.has(block.id)) return false;
+    seen.add(block.id);
+    let onPath = block.id === viewedId;
+    for (const child of childrenOf(block)) {
+      if (visit(child, seen)) onPath = true;
+    }
+    if (onPath) unfolded.add(block.id);
+    return onPath;
+  };
+  for (const block of runs) visit(block, new Set());
+  return unfolded;
+}
 
 /**
  * The session and the delegated runs it is waiting on, one line each, docked
@@ -40,10 +72,23 @@ export function RunningSubagents({
   onView,
   onStop,
   stoppable,
+  childrenOf = NO_CHILDREN,
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const live = runs.filter((block) => liveIds.has(block.id)).length;
+  const unfolded = unfoldedIds(runs, childrenOf, viewedId);
+  // Each run in the order the dock lists it, its open branch indented under it.
+  const rows: { block: Block; depth: number; folded: number }[] = [];
+  const place = (block: Block, depth: number, seen: Set<string>) => {
+    if (seen.has(block.id)) return;
+    seen.add(block.id);
+    const children = childrenOf(block);
+    const open = unfolded.has(block.id);
+    rows.push({ block, depth, folded: open ? 0 : children.length });
+    if (open) for (const child of children) place(child, depth + 1, seen);
+  };
+  for (const block of runs) place(block, 0, new Set());
   const ticking = live > 0;
 
   // A stop that never lands gives the button back rather than spinning on.
@@ -65,7 +110,7 @@ export function RunningSubagents({
       role="group"
       aria-label="Session and subagents"
       data-running-subagents
-      className={`-mx-1 ${runs.length > 4 ? "max-h-40 overflow-y-auto overflow-x-hidden" : ""}`}
+      className={`-mx-1 ${rows.length > 4 ? "max-h-40 overflow-y-auto overflow-x-hidden" : ""}`}
     >
       <Row
         selected={viewedId === null}
@@ -79,7 +124,7 @@ export function RunningSubagents({
             : undefined
         }
       />
-      {runs.map((block) => {
+      {rows.map(({ block, depth, folded }) => {
         const name = subagentName(block);
         const model = subagentModelName(block);
         const state = toolCallState(block);
@@ -89,16 +134,19 @@ export function RunningSubagents({
             ? formatLiveElapsed(block.startedAt, now)
             : "";
         const status = running
-          ? elapsed
+          ? elapsed || (depth > 0 ? "running" : "")
           : state === "rejected"
             ? "failed"
             : state === "pending"
               ? "stopped"
               : "done";
+        // A folded run says how many of its own are working beneath it.
+        const detail = folded ? `+${folded} ${status}`.trim() : status;
         return (
           <Row
             key={block.id}
             runId={block.id}
+            depth={depth}
             selected={viewedId === block.id}
             title={[subagentBrief(block), model].filter(Boolean).join("\n")}
             onClick={() => onView(block.id)}
@@ -113,8 +161,15 @@ export function RunningSubagents({
             }
             label={name}
             model={model}
-            detail={status}
-            state={running ? "running" : status}
+            detail={detail}
+            state={[
+              running ? "running" : status,
+              folded
+                ? `${folded} ${folded === 1 ? "subagent" : "subagents"} running`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(", ")}
             stop={
               running && onStop && stoppable?.has(block.id)
                 ? {
@@ -135,6 +190,7 @@ export function RunningSubagents({
 
 function Row({
   runId,
+  depth = 0,
   selected,
   title,
   onClick,
@@ -146,6 +202,8 @@ function Row({
   stop,
 }: {
   runId?: string;
+  /** How deep in the tree of runs the line sits; each level indents it. */
+  depth?: number;
   selected: boolean;
   title: string;
   onClick: () => void;
@@ -160,10 +218,19 @@ function Row({
   return (
     <div
       data-running-subagent={runId}
+      data-depth={depth || undefined}
+      style={depth ? { paddingLeft: `${4 + depth * 16}px` } : undefined}
       className={`flex min-h-7 w-full min-w-0 items-center gap-1 rounded-md px-1 transition-colors duration-150 hover:bg-content/8 ${
         selected ? "bg-content/8" : ""
       }`}
     >
+      {depth ? (
+        <CornerDownRight
+          aria-hidden
+          className="size-3 shrink-0 text-content/30"
+          strokeWidth={1.75}
+        />
+      ) : null}
       <button
         type="button"
         aria-pressed={selected}

@@ -35,6 +35,33 @@ export function readClaudeCodeTranscript(
   });
 }
 
+/** One subagent run of a Claude session, at any depth. */
+export type ClaudeSubagentRun = {
+  agentId: string;
+  /** The Agent call that spawned it, in its parent's transcript. */
+  toolUseId: string;
+  /** The run that spawned it; null for one the session spawned itself. */
+  parentAgentId: string | null;
+  description: string | null;
+  agentType: string | null;
+  depth: number;
+  /** Marked finished by Claude Code; older versions never mark it. */
+  finished: boolean;
+  /** Epoch ms its transcript was last written. */
+  modifiedMs: number;
+};
+
+/** Every subagent run the Claude session `sessionId` has started. */
+export function listClaudeSubagentRuns(
+  sessionId: string,
+  providerAccountId?: string,
+): Promise<ClaudeSubagentRun[]> {
+  return invoke<ClaudeSubagentRun[]>("claude_subagent_runs", {
+    sessionId,
+    providerAccountId,
+  });
+}
+
 /**
  * The records of the subagent that Agent call `toolUseId` spawned, read from
  * its own transcript, or null when Claude Code has not written one.
