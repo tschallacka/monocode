@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import {
+  backgroundSubagents,
   RunningSubagents,
   runningSubagents,
   subagentBackgroundTasks,
@@ -235,6 +236,40 @@ describe("subagentBackgroundTasks", () => {
     const runs = [run("a", "npm run dev")];
     const tasks = [{ id: "t1", description: "npm run dev" }];
     expect(subagentBackgroundTasks(tasks, runs).size).toBe(0);
+  });
+});
+
+describe("backgroundSubagents", () => {
+  it("keeps a background run live while its task runs, call returned or not", () => {
+    const launched = run("a", "Copy the test database", {
+      tool: {
+        callId: "toolu_a",
+        title: "Copy the test database",
+        kind: "agent",
+        status: "completed",
+      },
+    });
+    const finished = run("b", "Earlier run", {
+      tool: {
+        callId: "toolu_b",
+        title: "Earlier run",
+        kind: "agent",
+        status: "completed",
+      },
+    });
+    const shell = run("c", "npm run dev", {
+      tool: { callId: "toolu_c", title: "npm run dev", kind: "shell" },
+    });
+    const blocks = [launched, finished, shell];
+    expect(
+      ids(
+        backgroundSubagents(blocks, [
+          { id: "t1", description: "Copy", agent: true, callId: "toolu_a" },
+          { id: "t2", description: "npm run dev", callId: "toolu_c" },
+        ]),
+      ),
+    ).toEqual(["a"]);
+    expect(backgroundSubagents(blocks, [])).toEqual([]);
   });
 });
 
