@@ -36,6 +36,7 @@ import {
 import { Composer } from "./Composer";
 import {
   RunningSubagents,
+  backgroundSubagents,
   runningSubagents,
   subagentBackgroundTasks,
 } from "./RunningSubagents";
@@ -582,10 +583,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
     setViewedSubagentId(null);
     setEnteredRuns(new Map());
   }, [session.id]);
-  const liveSubagents = useMemo(
-    () => (session.busy ? runningSubagents(session.blocks) : []),
-    [session.busy, session.blocks],
-  );
+  // The live turn's runs, and runs launched into the background, which work on
+  // after their call has returned and often after the turn has ended.
+  const liveSubagents = useMemo(() => {
+    const running = session.busy ? runningSubagents(session.blocks) : [];
+    const background = backgroundSubagents(
+      session.blocks,
+      session.backgroundTasks ?? [],
+    ).filter((block) => !running.includes(block));
+    return background.length ? [...running, ...background] : running;
+  }, [session.busy, session.blocks, session.backgroundTasks]);
   const runSource = useMemo(
     () => ({
       harness: session.harness,

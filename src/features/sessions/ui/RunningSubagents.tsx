@@ -297,6 +297,27 @@ export function runningSubagents(blocks: Block[]): Block[] {
 }
 
 /**
+ * Runs launched into the background. Their Agent call returns as soon as the
+ * run starts, so the call reads as done while the run works on, for as long
+ * as its background task does, often past the turn that started it.
+ */
+export function backgroundSubagents(
+  blocks: Block[],
+  tasks: BackgroundTask[],
+): Block[] {
+  const callIds = new Set(
+    tasks.flatMap((task) => (task.agent && task.callId ? [task.callId] : [])),
+  );
+  if (callIds.size === 0) return [];
+  return blocks.filter(
+    (block) =>
+      isSubagentBlock(block) &&
+      !!block.tool?.callId &&
+      callIds.has(block.tool.callId),
+  );
+}
+
+/**
  * Each run's own background task id, keyed by the run's block id. The task
  * names the tool call that spawned it when the harness knows; otherwise fall
  * back to the description both carry, which may still hold the "Task" prefix
