@@ -59,6 +59,7 @@ import {
   useToolDetail,
 } from "./useToolDetail";
 import { HistoryTurn } from "./HistoryTurn";
+import { useFoldWork } from "../../settings/model/displayPrefs";
 import { streamMeasurement } from "../model/streamingPerformance";
 import { useReplyReflowAnchor } from "./useReplyReflowAnchor";
 import { FilePreview } from "../../files/ui/FilePreview";
@@ -428,6 +429,7 @@ function AgentTranscriptComponent({
   const loadEarlierPending = useRef(false);
   // Turns whose folded work the reader has opened, by turn id.
   const [openWork, setOpenWork] = useState<Record<string, boolean>>({});
+  const foldFinishedWork = useFoldWork();
   const [searchCurrent, setSearchCurrent] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const highlightOwner = useRef(Symbol("transcript-search"));
@@ -1332,7 +1334,7 @@ function AgentTranscriptComponent({
                   item.type === "block" ? [] : item.blocks,
                 )
               : folded;
-            const workOpen = openWork[turnId] ?? false;
+            const workOpen = openWork[turnId] ?? !foldFinishedWork;
             // The fold line is the turn's status line from the first token to
             // the last: the mark, and the clock beside it. It never moves, so a
             // turn settling does not shuffle the layout around the answer.
@@ -3792,7 +3794,9 @@ function ActivityPhaseGroup({
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const waiting = phase.steps.some(needsApproval);
-  const open = waiting || (override ?? active);
+  // With folding off a group opens like the live one and stays open.
+  const keptOpen = !useFoldWork();
+  const open = waiting || (override ?? (active || keptOpen));
   const [liveScroller, setLiveScroller] = useState<HTMLDivElement | null>(null);
   // A hidden tab stays as it was, open and live, so coming back neither
   // unfolds the group again nor plays in the steps that ran meanwhile. Those
@@ -3826,7 +3830,9 @@ function ActivityPhaseGroup({
   // whole. The auto-open while it runs is a live view, not a reading one, and
   // a one-line note the header already shows in full has nothing to add.
   const headline =
-    override === true && phase.headline && headlineHasMore(phase.headline)
+    (override ?? keptOpen) === true &&
+    phase.headline &&
+    headlineHasMore(phase.headline)
       ? phase.headline
       : undefined;
   const inert = phase.steps.length === 0 && !headlineHasMore(phase.headline);
@@ -4867,6 +4873,8 @@ function ActivityToolRow({
 }) {
   const [errorOpen, setErrorOpen] = useState(false);
   const output = useToolDetail(block, errorOpen);
+  // With folding off a finished step opens to its whole call and output.
+  const readable = !useFoldWork();
   const appCall = monoCodeToolCall(block);
   if (appCall) {
     return (
@@ -4881,6 +4889,10 @@ function ActivityToolRow({
       ? output.omitted
         ? (output.detail?.trim() ?? LOADING_OUTPUT)
         : output.detail?.trim()
+      : undefined;
+  const fullDetail =
+    readable && !pending && state === "accepted"
+      ? fullToolDetail(label, output)
       : undefined;
   const summary = (
     <ToolCallSummary
@@ -4923,6 +4935,32 @@ function ActivityToolRow({
             />
           </button>
         </div>
+      ) : fullDetail ? (
+        <div
+          aria-label={`Tool call: ${label}`}
+          className="group flex min-w-0 items-center gap-1.5 py-1"
+        >
+          {bare ? null : <ActivityToolIcon state={state} live={live} />}
+          <div
+            className="flex min-w-0 flex-1 cursor-pointer"
+            onClick={() => setErrorOpen((value) => !value)}
+          >
+            {summary}
+          </div>
+          <ToolCallStatusIcon state={state} />
+          <button
+            type="button"
+            aria-expanded={errorOpen}
+            aria-label={`${errorOpen ? "Hide" : "Show"} output of ${label}`}
+            onClick={() => setErrorOpen((value) => !value)}
+            className="-m-1 shrink-0 rounded p-1"
+          >
+            <ChevronRight
+              className={`size-3.5 text-content/35 transition-transform ${errorOpen ? "rotate-90" : ""}`}
+              strokeWidth={1.75}
+            />
+          </button>
+        </div>
       ) : (
         <div
           aria-label={`Tool call: ${label}`}
@@ -4936,6 +4974,13 @@ function ActivityToolRow({
       {pending ? (
         <ApprovalControls block={block} onApproval={onApproval} />
       ) : null}
+      {errorOpen && fullDetail ? (
+        <pre
+          className={`min-w-0 whitespace-pre-wrap break-words py-1 font-mono text-[12px] leading-5 text-content/55 ${bare ? "" : "pl-5"}`}
+        >
+          {fullDetail}
+        </pre>
+      ) : null}
       {errorOpen && errorDetail ? (
         <pre
           className={`min-w-0 whitespace-pre-wrap break-words py-1 font-mono text-[12px] leading-5 text-red-400/80 ${bare ? "" : "pl-5"}`}
@@ -4945,6 +4990,16 @@ function ActivityToolRow({
       ) : null}
     </div>
   );
+}
+
+/** The whole call, then its output when there is any beyond the call itself. */
+function fullToolDetail(
+  label: string,
+  output: { detail?: string; omitted: boolean; pending: boolean },
+): string {
+  if (output.pending) return `${label}\n\n${LOADING_OUTPUT}`;
+  const detail = output.detail?.trim();
+  return detail && detail !== label ? `${label}\n\n${detail}` : label;
 }
 
 function MonoCodeMark({ className = "size-4" }: { className?: string }) {
