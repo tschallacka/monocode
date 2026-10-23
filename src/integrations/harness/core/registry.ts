@@ -118,16 +118,12 @@ export type HarnessAdapter = {
 const adapters = new Map<HarnessId, HarnessAdapter>();
 
 /**
- * After a turn settles, keep the child warm for follow-ups, then park it.
- * Resume state stays, so the next prompt respawns instead of starting over.
- */
-export const HARNESS_IDLE_PARK_MS = 3 * 60_000;
-
-/**
- * Each warm child is a CLI process of a few hundred MB, plus its MCP servers.
- * Past `limit` idle ones, the least recently settled is parked early, never
- * one `keep` claims (the conversation on screen) unless the limit is zero.
- * Running turns are not idle, so they never count.
+ * A child stays alive after its turn settles, however long it sits idle: its
+ * process holds mod state, background tasks and warm MCP servers. Each is a
+ * CLI process of a few hundred MB, so past `limit` idle ones the least
+ * recently settled is parked (resume state stays, the next prompt respawns),
+ * never one `keep` claims (the conversation on screen) unless the limit is
+ * zero. Running turns are not idle, so they never count.
  */
 export type HarnessIdleParkPolicy = {
   limit: () => number;
@@ -141,10 +137,7 @@ let idleParkPolicy: HarnessIdleParkPolicy = {
 let idleLimitCheck: ReturnType<typeof setTimeout> | undefined;
 
 /** Map order is settle order: the first entry has been idle longest. */
-const idleParkTimers = new Map<
-  string,
-  { harness: HarnessId; timer: ReturnType<typeof setTimeout> }
->();
+const idleSessions = new Map<string, { harness: HarnessId }>();
 const sessionOperationTails = new Map<string, Promise<void>>();
 const sessionSteerTails = new Map<string, Promise<void>>();
 const activeTurnSessions = new Set<string>();
@@ -196,20 +189,12 @@ function queueSteerOperation<T>(
 }
 
 function cancelIdlePark(sessionId: string): void {
-  const idle = idleParkTimers.get(sessionId);
-  if (idle) clearTimeout(idle.timer);
-  idleParkTimers.delete(sessionId);
+  idleSessions.delete(sessionId);
 }
 
 function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
   cancelIdlePark(sessionId);
-  idleParkTimers.set(sessionId, {
-    harness,
-    timer: setTimeout(() => {
-      idleParkTimers.delete(sessionId);
-      void stopHarnessSession(harness, sessionId);
-    }, HARNESS_IDLE_PARK_MS),
-  });
+  idleSessions.set(sessionId, { harness });
   // Checked once the settling operation has left the queue, so a session
   // with a follow-up already queued is told apart from the one finishing.
   if (idleLimitCheck === undefined) {
@@ -226,8 +211,8 @@ export function enforceHarnessIdleLimit(): void {
   clearTimeout(idleLimitCheck);
   idleLimitCheck = undefined;
   const limit = Math.max(0, idleParkPolicy.limit());
-  let excess = idleParkTimers.size - limit;
-  for (const [sessionId, { harness }] of [...idleParkTimers]) {
+  let excess = idleSessions.size - limit;
+  for (const [sessionId, { harness }] of [...idleSessions]) {
     if (excess <= 0) return;
     if (sessionOperationTails.has(sessionId)) continue;
     if (limit > 0 && idleParkPolicy.keep(sessionId)) continue;
@@ -238,8 +223,7 @@ export function enforceHarnessIdleLimit(): void {
 
 /** Test seam. */
 export function resetHarnessIdlePark(): void {
-  for (const { timer } of idleParkTimers.values()) clearTimeout(timer);
-  idleParkTimers.clear();
+  idleSessions.clear();
   clearTimeout(idleLimitCheck);
   idleLimitCheck = undefined;
   idleParkPolicy = {

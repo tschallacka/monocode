@@ -3643,14 +3643,19 @@ function ProvidersPage({
         <Row
           id="idle-agents"
           label="Keep idle agents ready"
-          description="A finished conversation keeps its agent CLI running for a few minutes, so a follow-up starts instantly. Each one can hold a few hundred MB of memory. Past this many, the one idle longest stops early; it resumes on your next message after a short restart. Choose None on a machine short on memory."
+          description="A finished conversation keeps its agent CLI running however long it sits idle, so a follow-up starts instantly and mod panes, background tasks and MCP servers live on. Each one can hold a few hundred MB of memory. Past this many, the one idle longest stops; it resumes on your next message after a short restart. Choose a lower number on a machine short on memory."
         >
           <Segmented
             label="Keep idle agents ready"
             value={String(idleAgentLimit)}
             options={IDLE_AGENT_LIMITS.map((limit) => ({
               value: String(limit),
-              label: limit === 0 ? "None" : String(limit),
+              label:
+                limit === 0
+                  ? "None"
+                  : Number.isFinite(limit)
+                    ? String(limit)
+                    : "All",
             }))}
             onChange={onIdleAgentLimit}
           />
