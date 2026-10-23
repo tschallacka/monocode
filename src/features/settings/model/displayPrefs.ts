@@ -82,6 +82,19 @@ export const loadPacedReveal = pacedReveal.load;
 export const savePacedReveal = pacedReveal.save;
 export const usePacedReveal = pacedReveal.useFlag;
 
+const foldWork = flagStore(
+  "monocode.foldWork",
+  true,
+  "monocode:foldworkchange",
+);
+/**
+ * A turn's work folds once the agent answers, and each phase closes when the
+ * next starts. Off, the trail stays open and every step opens to its output.
+ */
+export const loadFoldWork = foldWork.load;
+export const saveFoldWork = foldWork.save;
+export const useFoldWork = foldWork.useFlag;
+
 const newLayoutPromptDismissed = flagStore(
   "monocode.newLayoutPromptDismissed",
   false,

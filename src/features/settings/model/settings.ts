@@ -409,6 +409,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "streaming pacing immediate latency performance animation",
   },
   {
+    id: "fold-work",
+    section: "chat",
+    label: "Fold finished work",
+    keywords:
+      "collapse expand auto fold worked for activity steps tool calls commands output trail",
+  },
+  {
     id: "follow-up",
     section: "chat",
     label: "Follow-up behavior",

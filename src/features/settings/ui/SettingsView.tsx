@@ -276,6 +276,8 @@ import {
   saveComposerAutocorrect,
   savePacedReveal,
   usePacedReveal,
+  saveFoldWork,
+  useFoldWork,
   saveMaskEmails,
   saveNewLayoutPromptDismissed,
   saveRailMonosPinned,
@@ -1068,6 +1070,7 @@ function GeneralPage({
 
 function ChatPage() {
   const pacedReveal = usePacedReveal();
+  const foldWork = useFoldWork();
   const [transcriptLayout, setTranscriptLayout] =
     useState<TranscriptLayout>(loadTranscriptLayout);
   const [transcriptAnchor, setTranscriptAnchor] =
@@ -1192,6 +1195,17 @@ function ChatPage() {
             label="Smooth text reveal"
             on={pacedReveal}
             onChange={savePacedReveal}
+          />
+        </Row>
+        <Row
+          id="fold-work"
+          label="Fold finished work"
+          description="Collapse a turn's steps once the agent answers, and each group of steps once the next starts. Turn this off to keep the work open, with every step opening to its full command and output."
+        >
+          <Toggle
+            label="Fold finished work"
+            on={foldWork}
+            onChange={saveFoldWork}
           />
         </Row>
       </Group>
@@ -4143,7 +4157,9 @@ function ProviderAccountEditor({
               value={editor.token ?? ""}
               disabled={working}
               placeholder={
-                editor.hasToken ? "New token (blank keeps current)" : "API token"
+                editor.hasToken
+                  ? "New token (blank keeps current)"
+                  : "API token"
               }
               autoComplete="off"
               spellCheck={false}
