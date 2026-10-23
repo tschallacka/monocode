@@ -5,7 +5,6 @@ import {
 } from "../../../features/sessions/model/models";
 import type { HarnessId } from "../../../features/sessions/model/session";
 import {
-  HARNESS_IDLE_PARK_MS,
   bindHarnessSession,
   canCompactHarnessContext,
   canRunHarnessTextPrompt,
@@ -329,7 +328,7 @@ describe("harness registry", () => {
     expect(pi).not.toHaveBeenCalled();
   });
 
-  it("parks a live child a few minutes after the turn settles", async () => {
+  it("keeps a live child however long it sits idle", async () => {
     vi.useFakeTimers();
     const stopSession = vi.fn(async () => undefined);
     registerHarness(stub("cursor", { stopSession }));
@@ -344,11 +343,8 @@ describe("harness registry", () => {
       onEvent: () => undefined,
     });
 
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
     expect(stopSession).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS - 1);
-    expect(stopSession).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(stopSession).toHaveBeenCalledWith("s1");
   });
   describe("idle limit", () => {
     const turn = (sessionId: string) =>
@@ -372,9 +368,9 @@ describe("harness registry", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(stopSession.mock.calls).toEqual([["s1"]]);
 
-      // The rest still park on the idle timer.
-      await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
-      expect(stopSession.mock.calls.flat().sort()).toEqual(["s1", "s2", "s3"]);
+      // The two within the limit stay, however long they sit idle.
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+      expect(stopSession.mock.calls).toEqual([["s1"]]);
     });
 
     it("spares the conversation on screen and never counts a running turn", async () => {

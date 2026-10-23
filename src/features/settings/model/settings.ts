@@ -1142,14 +1142,27 @@ export function saveClaudeHooks(value: boolean) {
 
 const IDLE_AGENT_LIMIT_KEY = "monocode.idleAgentLimit";
 
-/** How many finished conversations keep their agent CLI warm. */
-export const IDLE_AGENT_LIMITS = [0, 1, 2, 3, 5] as const;
+/**
+ * How many finished conversations keep their agent CLI running; none dies of
+ * inactivity alone. Infinity is "All", stored as `all`.
+ */
+export const IDLE_AGENT_LIMITS = [
+  0,
+  1,
+  2,
+  3,
+  5,
+  Number.POSITIVE_INFINITY,
+] as const;
 export type IdleAgentLimit = (typeof IDLE_AGENT_LIMITS)[number];
-export const IDLE_AGENT_LIMIT_DEFAULT: IdleAgentLimit = 3;
+export const IDLE_AGENT_LIMIT_DEFAULT: IdleAgentLimit =
+  Number.POSITIVE_INFINITY;
 
 export function loadIdleAgentLimit(): IdleAgentLimit {
   try {
-    const raw = Number(localStorage.getItem(IDLE_AGENT_LIMIT_KEY) ?? NaN);
+    const stored = localStorage.getItem(IDLE_AGENT_LIMIT_KEY);
+    const raw =
+      stored === "all" ? Number.POSITIVE_INFINITY : Number(stored ?? NaN);
     return (
       IDLE_AGENT_LIMITS.find((limit) => limit === raw) ??
       IDLE_AGENT_LIMIT_DEFAULT
@@ -1161,7 +1174,10 @@ export function loadIdleAgentLimit(): IdleAgentLimit {
 
 export function saveIdleAgentLimit(value: IdleAgentLimit) {
   try {
-    localStorage.setItem(IDLE_AGENT_LIMIT_KEY, String(value));
+    localStorage.setItem(
+      IDLE_AGENT_LIMIT_KEY,
+      Number.isFinite(value) ? String(value) : "all",
+    );
   } catch {
     // private mode / quota
   }
