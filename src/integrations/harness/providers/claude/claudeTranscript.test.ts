@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newSession } from "../../../../features/sessions/model/session";
 import {
+  claudeSubagentBlocks,
   claudeTranscriptTurns,
   withClaudeTranscript,
 } from "./claudeTranscript";
@@ -124,6 +125,27 @@ describe("Claude Code transcript import", () => {
     expect(tool.tool).toMatchObject({ callId: "toolu_1", status: "completed" });
     expect(reply.text).toBe("Fixed the rounding.");
     expect(session.blocks.every((block) => !block.streaming)).toBe(true);
+  });
+
+  it("reads a subagent's own file as its run, without the brief", () => {
+    const run = records
+      .filter((record) => record.isMeta !== true)
+      .map((record) => ({ ...record, isSidechain: true }));
+    // The main-thread reading of the same file finds nothing.
+    expect(claudeTranscriptTurns(run)).toEqual([]);
+    const blocks = claudeSubagentBlocks(run);
+    expect(blocks.map((block) => block.role)).toEqual([
+      "reasoning",
+      "tool",
+      "assistant",
+      "assistant",
+    ]);
+    expect(blocks[1].tool).toMatchObject({
+      callId: "toolu_1",
+      status: "completed",
+      detail: "<?php // cart",
+    });
+    expect(blocks.at(-1)?.text).toBe("Fixed the rounding.");
   });
 
   it("leaves out records that come before any prompt", () => {

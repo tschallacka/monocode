@@ -8,6 +8,7 @@ import {
   CornerUpLeft,
   FilePlusCorner,
   ListBullet,
+  Maximize2,
   Minus,
   Pencil,
   PenLine,
@@ -59,6 +60,7 @@ import {
   useToolDetail,
 } from "./useToolDetail";
 import { HistoryTurn } from "./HistoryTurn";
+import { useSubagentAccess, useSubagentRunBlocks } from "./subagentAccess";
 import { streamMeasurement } from "../model/streamingPerformance";
 import { useReplyReflowAnchor } from "./useReplyReflowAnchor";
 import { FilePreview } from "../../files/ui/FilePreview";
@@ -4165,6 +4167,20 @@ function SubagentPanel({
   const output = useToolDetail(block, open);
   const report = subagentReport(block, output.detail);
   const failed = state === "rejected";
+  const { enter } = useSubagentAccess();
+  // Swaps the pane to the run, the way the composer dock does for live ones,
+  // so a finished run can be followed in full too.
+  const enterButton = enter ? (
+    <button
+      type="button"
+      aria-label={`Open ${name}'s run`}
+      title="Open this run in the pane"
+      onClick={() => enter(block.id)}
+      className="-mr-1 ml-1 shrink-0 rounded p-1 text-content/35 transition-colors duration-200 hover:text-content/80"
+    >
+      <Maximize2 className="size-3.5" strokeWidth={1.75} />
+    </button>
+  ) : null;
 
   // The name takes the room it needs and gives the rest back: a provider that
   // names a run with its whole brief must not push the row off the pane.
@@ -4212,34 +4228,37 @@ function SubagentPanel({
       >
         <SubagentMascot name={name} state={state} active={active} />
         {label}
-        <span className="size-3.5 shrink-0" />
+        {enterButton ?? <span className="size-3.5 shrink-0" />}
       </div>
     );
   }
 
   return (
     <div className="flex min-w-0 flex-col">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={open ? `Hide ${name}'s work` : `Show ${name}'s work`}
-        title={brief}
-        onClick={onToggle}
-        // An open row keeps the wash it lit up under the cursor, so the panel
-        // below reads as hanging off it rather than off the transcript.
-        className={`group -mx-1.5 flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-200 hover:bg-content/8 ${
-          open ? "bg-content/8" : ""
-        }`}
-      >
-        <SubagentMascot name={name} state={state} active={active} />
-        {label}
-        <ChevronRight
-          className={`size-3.5 shrink-0 text-content/35 transition-transform duration-200 group-hover:text-content/60 ${
-            open ? "rotate-90" : ""
+      <div className="flex min-w-0 items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? `Hide ${name}'s work` : `Show ${name}'s work`}
+          title={brief}
+          onClick={onToggle}
+          // An open row keeps the wash it lit up under the cursor, so the panel
+          // below reads as hanging off it rather than off the transcript.
+          className={`group -mx-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-200 hover:bg-content/8 ${
+            open ? "bg-content/8" : ""
           }`}
-          strokeWidth={1.75}
-        />
-      </button>
+        >
+          <SubagentMascot name={name} state={state} active={active} />
+          {label}
+          <ChevronRight
+            className={`size-3.5 shrink-0 text-content/35 transition-transform duration-200 group-hover:text-content/60 ${
+              open ? "rotate-90" : ""
+            }`}
+            strokeWidth={1.75}
+          />
+        </button>
+        {enterButton}
+      </div>
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           /*
@@ -4362,12 +4381,17 @@ function SubagentTranscriptView({
     () => steps.map((step) => agentStepBlock(step, block.id)),
     [steps, block.id],
   );
+  // The run's own transcript, where there is one, holds every step and word
+  // in full; the mirrored steps are capped and leave its prose out.
+  const runBlocks = useSubagentRunBlocks(block.tool?.callId, active);
   const items = useMemo(
-    () => groupTurnItems(stepBlocks, { settled: !active }),
-    [stepBlocks, active],
+    () => groupTurnItems(runBlocks ?? stepBlocks, { settled: !active }),
+    [runBlocks, stepBlocks, active],
   );
   const status = subagentStatusLine(block, steps);
-  const report = subagentReport(block);
+  // A run read in full already ends on its report, unless the call failed.
+  const report =
+    runBlocks && state !== "rejected" ? undefined : subagentReport(block);
 
   // Follow the newest step while pinned, including growth after render:
   // highlighted code, opened groups, media.

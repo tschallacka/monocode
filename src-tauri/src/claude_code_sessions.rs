@@ -4,7 +4,7 @@
 //! the folder name loses information, so the `cwd` comes from the records.
 
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
@@ -282,23 +282,57 @@ fn slim_record(record: &Value) -> Value {
 /// The main thread's `user` and `assistant` records, in order, for MonoCode to
 /// turn into transcript blocks. Subagent (sidechain) records stay out.
 pub(crate) fn transcript_records(path: &Path) -> Result<Vec<Value>, String> {
+    read_records(path, false)
+}
+
+/// A file's `user` and `assistant` records, slimmed. A subagent's own file is
+/// all sidechain, so it is read with `sidechain` set.
+fn read_records(path: &Path, sidechain: bool) -> Result<Vec<Value>, String> {
     let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
     Ok(BufReader::new(file)
         .lines()
         .map_while(Result::ok)
         .filter(|line| {
             (line.contains("\"type\":\"user\"") || line.contains("\"type\":\"assistant\""))
-                && !line.contains("\"isSidechain\":true")
+                && (sidechain || !line.contains("\"isSidechain\":true"))
         })
         .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
         .filter(|record| {
             matches!(
                 record.get("type").and_then(Value::as_str),
                 Some("user" | "assistant")
-            ) && record.get("isSidechain").and_then(Value::as_bool) != Some(true)
+            ) && (sidechain || record.get("isSidechain").and_then(Value::as_bool) != Some(true))
         })
         .map(|record| slim_record(&record))
         .collect())
+}
+
+/// The transcript of the subagent the Agent call `tool_use_id` spawned.
+/// Claude Code writes it beside the session's own file, as
+/// `<session>/subagents/agent-<id>.jsonl`, with a `.meta.json` naming the call.
+fn find_subagent_transcript(transcript: &Path, tool_use_id: &str) -> Option<PathBuf> {
+    let folder = transcript.with_extension("").join("subagents");
+    std::fs::read_dir(folder)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find_map(|meta| {
+            let name = meta.file_name()?.to_str()?;
+            let agent = name.strip_suffix(".meta.json")?;
+            let text = std::fs::read_to_string(&meta).ok()?;
+            let value: Value = serde_json::from_str(&text).ok()?;
+            (value.get("toolUseId").and_then(Value::as_str) == Some(tool_use_id))
+                .then(|| meta.with_file_name(format!("{agent}.jsonl")))
+        })
+        .filter(|path| path.is_file())
+}
+
+fn is_tool_use_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 #[tauri::command(async)]
@@ -326,6 +360,28 @@ pub fn claude_code_transcript(
     transcript_records(&path)
 }
 
+/// A subagent's whole run, read from its own transcript, or `None` while
+/// Claude Code has not written it (or the session predates such files).
+#[tauri::command(async)]
+pub fn claude_subagent_transcript(
+    app: AppHandle,
+    provider_account_id: Option<String>,
+    session_id: String,
+    tool_use_id: String,
+) -> Result<Option<Vec<Value>>, String> {
+    if !is_session_id(&session_id) || !is_tool_use_id(&tool_use_id) {
+        return Err("Invalid Claude session or tool call id".into());
+    }
+    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    let Some(transcript) = find_claude_transcript(&config_dir, &session_id) else {
+        return Ok(None);
+    };
+    match find_subagent_transcript(&transcript, &tool_use_id) {
+        Some(path) => read_records(&path, true).map(Some),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,6 +401,42 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn finds_a_subagent_run_by_the_agent_call_that_spawned_it() {
+        let dir = temp_dir("subagents");
+        let transcript = fixture(&dir, "-Users-me-shop", "bbbb-2222", &[]);
+        let folder = transcript.with_extension("").join("subagents");
+        std::fs::create_dir_all(&folder).unwrap();
+        for (agent, call) in [("agent-a1", "toolu_one"), ("agent-a2", "toolu_two")] {
+            std::fs::write(
+                folder.join(format!("{agent}.meta.json")),
+                format!(r#"{{"agentType":"code-researcher","toolUseId":"{call}"}}"#),
+            )
+            .unwrap();
+            std::fs::write(
+                folder.join(format!("{agent}.jsonl")),
+                [
+                    format!(r#"{{"type":"user","isSidechain":true,"message":{{"content":"Brief for {call}"}}}}"#),
+                    r#"{"type":"attachment","isSidechain":true}"#.to_string(),
+                    r#"{"type":"assistant","isSidechain":true,"message":{"id":"m1","content":[{"type":"text","text":"Found it"}]}}"#.to_string(),
+                ]
+                .join("\n"),
+            )
+            .unwrap();
+        }
+
+        let path = find_subagent_transcript(&transcript, "toolu_two").unwrap();
+        assert_eq!(path, folder.join("agent-a2.jsonl"));
+        let records = read_records(&path, true).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["message"]["content"], "Brief for toolu_two");
+        // The main-thread reader still leaves a sidechain file's records out.
+        assert!(transcript_records(&path).unwrap().is_empty());
+        assert!(find_subagent_transcript(&transcript, "toolu_missing").is_none());
+        assert!(!is_tool_use_id("../agent"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
