@@ -33,6 +33,7 @@ import {
 } from "../model/mono";
 import { ConfirmReset } from "./ConfirmReset";
 import { MemoryPage, SoulPage, useMonoFiles } from "./MonoFilePages";
+import { MonoProjects } from "./MonoProjects";
 import { ColorPicker, MascotPicker, SwitchRow } from "./monoPanelParts";
 
 export type MonoSettingsSection = "general" | "soul" | "memory";
@@ -43,7 +44,7 @@ const SECTIONS: {
   icon: typeof Settings;
 }[] = [
   { id: "general", label: "General", icon: Settings },
-  { id: "soul", label: "Instructions", icon: Sparkles },
+  { id: "soul", label: "Soul", icon: Sparkles },
   { id: "memory", label: "Memory", icon: StickyNote },
 ];
 
@@ -65,12 +66,16 @@ type Props = {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onReset?: () => Promise<void>;
   onClose: () => void;
+  /**
+   * A project's coordinator: one folder, so a context limit in place of
+   * projects, and instructions in place of a soul.
+   */
+  coordinator?: boolean;
 };
 
 /**
- * Who a project's coordinator is and how it works, in a dialog of its own:
- * its name, face, model and context limit under General, then its
- * instructions and memory.
+ * Who the Mono is and how it works, in a dialog of its own: its name, face,
+ * model and projects under General, then its soul and memory.
  */
 export function MonoSettingsDialog({
   monoId,
@@ -78,13 +83,16 @@ export function MonoSettingsDialog({
   status,
   initialSection = "general",
   onClose,
+  coordinator = false,
   ...general
 }: Props) {
   const [section, setSection] = useState(initialSection);
   const files = useMonoFiles(monoId, status);
   return (
     <Modal
-      title={`${agent.name} project settings`}
+      title={
+        coordinator ? `${agent.name} project settings` : `${agent.name} settings`
+      }
       size="lg"
       minimalHeader
       fitViewport
@@ -118,7 +126,7 @@ export function MonoSettingsDialog({
               }`}
             >
               <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
-              {label}
+              {coordinator && id === "soul" ? "Instructions" : label}
             </button>
           ))}
         </nav>
@@ -127,6 +135,7 @@ export function MonoSettingsDialog({
             <GeneralSection
               monoId={monoId}
               agent={agent}
+              coordinator={coordinator}
               {...general}
             />
           ) : section === "soul" ? (
@@ -134,6 +143,7 @@ export function MonoSettingsDialog({
               monoId={monoId}
               agent={agent}
               files={files}
+              coordinator={coordinator}
             />
           ) : (
             <MemoryPage monoId={monoId} files={files} />
@@ -157,6 +167,7 @@ function GeneralSection({
   onModelSettingsChange,
   onRuntimeModeChange,
   onReset,
+  coordinator = false,
 }: Omit<Props, "status" | "initialSection" | "onClose">) {
   const lock = useLockOverscroll<HTMLDivElement>();
   const shown = useSyncExternalStore(
@@ -221,15 +232,29 @@ function GeneralSection({
         </SettingRow>
       </SettingGroup>
 
-      <GroupHeading title="Context" />
-      <SettingGroup>
-        <SettingRow
-          label="Compact at"
-          description="How full its context gets before the next turn starts fresh with a brief of the conversation."
-        >
-          <CompactAtPicker monoId={monoId} />
-        </SettingRow>
-      </SettingGroup>
+      {coordinator ? (
+        <>
+          <GroupHeading title="Context" />
+          <SettingGroup>
+            <SettingRow
+              label="Compact at"
+              description="How full its context gets before the next turn starts fresh with a brief of the conversation."
+            >
+              <CompactAtPicker monoId={monoId} />
+            </SettingRow>
+          </SettingGroup>
+        </>
+      ) : (
+        <>
+          <GroupHeading
+            title="Projects"
+            description="It can see every session, note and folder in these."
+          />
+          <SettingGroup>
+            <MonoProjects monoId={monoId} projects={agent.projects} />
+          </SettingGroup>
+        </>
+      )}
 
       <GroupHeading title="Sessions it starts" />
       <SettingGroup>
@@ -265,7 +290,7 @@ function GeneralSection({
             label="Reset conversation"
             title={`Reset ${agent.name}'s conversation?`}
             body="All messages in this Mono's conversation will be deleted and any active reply will be stopped. This can't be undone."
-            kept="Its instructions and memory will be kept."
+            kept="Its soul, memory and habits will be kept."
             failure="Could not reset the conversation."
             onConfirm={onReset}
           >
@@ -273,7 +298,7 @@ function GeneralSection({
               <SettingGroup>
                 <SettingRow
                   label="Reset conversation"
-                  description="Clear all messages and start fresh. Its instructions and memory stay."
+                  description="Clear all messages and start fresh. Its soul, memory and habits stay."
                 >
                   <button
                     ref={ref}

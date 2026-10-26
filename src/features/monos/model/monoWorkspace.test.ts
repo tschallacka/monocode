@@ -3,12 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import { leafIds, newTab, splitPane } from "../../workspace/model/layout";
 import { planWorkspaceTabClose } from "../../workspace/model/workspaceTabGroups";
-import {
-  createCoordinatorProject,
-  findMono,
-  saveMonoName,
-  saveMonoSessionId,
-} from "./mono";
+import { createMono, findMono, saveMonoName, saveMonoSessionId } from "./mono";
 import { planAgentContext, recordAgentContext } from "./monoFiles";
 import { loadMonoRotation, saveMonoRotation } from "./monoRotation";
 import {
@@ -32,12 +27,9 @@ const chat = (id: string, cwd = "/project") => ({
 });
 const createSession = (cwd: string) => newSession("codex", cwd);
 
-const createProject = (path = "/project") =>
-  createCoordinatorProject({ name: "Resident", path });
-
 /** A Mono that works on `cwd`, with `sessionId` as its chat. */
 function monoFor(cwd: string, sessionId: string): string {
-  const mono = createProject(cwd);
+  const mono = createMono([cwd]);
   saveMonoSessionId(mono.id, sessionId);
   return mono.id;
 }
@@ -58,8 +50,8 @@ it("loads an existing resident conversation without creating a session", async (
   expect(host.add).not.toHaveBeenCalled();
 });
 
-it("starts a new project's conversation with Auto permissions in its folder, once", async () => {
-  const monoId = createProject().id;
+it("starts a new Mono's conversation with Auto permissions in the home folder, once", async () => {
+  const monoId = createMono(["/project"]).id;
   const host = {
     home: vi.fn().mockResolvedValue("/home"),
     load: vi.fn(),
@@ -67,8 +59,7 @@ it("starts a new project's conversation with Auto permissions in its folder, onc
     add: vi.fn(),
   };
   const agent = (await ensureMonoSession(monoId, host))!;
-  expect(agent.cwd).toBe("/project");
-  expect(host.home).not.toHaveBeenCalled();
+  expect(agent.cwd).toBe("/home");
   expect(agent.runtimeMode).toBe("auto");
   expect(sessionOf(monoId)).toBe(agent.id);
   expect(host.add).toHaveBeenCalledExactlyOnceWith(agent);
@@ -90,43 +81,41 @@ it("opens nothing for a Mono that no longer exists", async () => {
 });
 
 it("shares concurrent first opens of the same Mono", async () => {
-  const monoId = createProject().id;
-  saveMonoSessionId(monoId, "missing");
-  let resolveLoad!: (session: null) => void;
-  const load = new Promise<null>((resolve) => {
-    resolveLoad = resolve;
+  const monoId = createMono().id;
+  let resolveHome!: (path: string) => void;
+  const home = new Promise<string>((resolve) => {
+    resolveHome = resolve;
   });
   const host = {
-    home: vi.fn().mockResolvedValue("/home"),
-    load: vi.fn(() => load),
+    home: vi.fn(() => home),
+    load: vi.fn(),
     create: vi.fn(createSession),
     add: vi.fn(),
   };
   const first = ensureMonoSession(monoId, host);
   const second = ensureMonoSession(monoId, host);
-  resolveLoad(null);
+  resolveHome("/home");
   const [one, two] = await Promise.all([first, second]);
   expect(one).toBe(two);
   expect(sessionOf(monoId)).toBe(one!.id);
-  expect(host.load).toHaveBeenCalledOnce();
+  expect(host.home).toHaveBeenCalledOnce();
   expect(host.create).toHaveBeenCalledOnce();
   expect(host.add).toHaveBeenCalledOnce();
 });
 
-it("allows retrying an open after loading its conversation fails", async () => {
-  const monoId = createProject().id;
-  saveMonoSessionId(monoId, "missing");
+it("allows retrying an open after the home lookup fails", async () => {
+  const monoId = createMono().id;
   const host = {
-    home: vi.fn().mockResolvedValue("/home"),
-    load: vi
+    home: vi
       .fn()
       .mockRejectedValueOnce(new Error("Not ready"))
-      .mockResolvedValue(null),
+      .mockResolvedValue("/home"),
+    load: vi.fn(),
     create: vi.fn(createSession),
     add: vi.fn(),
   };
   await expect(ensureMonoSession(monoId, host)).rejects.toThrow("Not ready");
-  expect((await ensureMonoSession(monoId, host))!.cwd).toBe("/project");
+  expect((await ensureMonoSession(monoId, host))!.cwd).toBe("/home");
   expect(host.add).toHaveBeenCalledOnce();
 });
 

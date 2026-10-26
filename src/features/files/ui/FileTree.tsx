@@ -81,6 +81,7 @@ const GIT_STATUS_COLOR: Record<string, string> = {
 
 type Props = {
   cwd: string;
+  compactHeader?: boolean;
   /** Display identity for the root when it differs from the physical folder. */
   rootLabel?: string;
   onOpenFile: OpenFileFn;
@@ -250,6 +251,7 @@ function explorerItems(
 // intact unless file-tree props, local state, or subscriptions actually change.
 export const FileTree = memo(function FileTree({
   cwd,
+  compactHeader = false,
   rootLabel,
   onOpenFile,
   onOpenTerminal,
@@ -1012,6 +1014,7 @@ export const FileTree = memo(function FileTree({
         onContextMenu={onBackgroundMenu}
       >
         <PaneHeader
+          compact={compactHeader}
           role="toolbar"
           aria-label="Explorer"
           onContextMenu={(e) => {

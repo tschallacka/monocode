@@ -1,11 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
-  createCoordinatorProject,
+  addMonoProject,
+  createMono,
+  findMono,
   listMonos,
   monoLook,
   monoProjectsPhrase,
+  monoWorksOn,
   removeMono,
+  removeMonoProject,
   reorderMonos,
 } from "./mono";
 import { monoBackgroundKey, monoChatBackground } from "./monoBackground";
@@ -21,22 +25,29 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const project = (name: string) =>
-  createCoordinatorProject({ name, path: `/code/${name}` });
-
 it("gives each new Mono a mascot and color the others are not using", () => {
-  const first = project("app");
-  const second = project("site");
+  const first = createMono();
+  const second = createMono();
   expect(second.mascot).not.toBe(first.mascot);
   expect(second.color).not.toBe(first.color);
-  expect(monoLook(first).name).toBe("app");
-  expect(first.projects).toEqual(["/code/app"]);
+  expect(monoLook(first).name).toMatch(/^Mono[A-Z]/);
+  expect(first.projects).toEqual([]);
+});
+
+it("adds each project once and takes one away by its path", () => {
+  const { id } = createMono(["/code/app"]);
+  addMonoProject(id, "/code/site");
+  addMonoProject(id, "/code/app/");
+  expect(findMono(id)?.projects).toEqual(["/code/app", "/code/site"]);
+  expect(monoWorksOn(findMono(id)!, "/code/site/")).toBe(true);
+  removeMonoProject(id, "/code/app/");
+  expect(findMono(id)?.projects).toEqual(["/code/site"]);
 });
 
 it("keeps the rail's order and forgets a removed Mono", () => {
-  const a = project("a");
-  const b = project("b");
-  const c = project("c");
+  const a = createMono();
+  const b = createMono();
+  const c = createMono();
   reorderMonos([c.id, a.id, b.id]);
   expect(listMonos().map((mono) => mono.id)).toEqual([c.id, a.id, b.id]);
   removeMono(a.id);
@@ -44,16 +55,16 @@ it("keeps the rail's order and forgets a removed Mono", () => {
 });
 
 it("names its projects the way a sentence would", () => {
-  const named = (name: string) => ({ path: `/code/${name}`, name });
+  const project = (name: string) => ({ path: `/code/${name}`, name });
   expect(monoProjectsPhrase([])).toBe("");
-  expect(monoProjectsPhrase([named("app")])).toBe("app");
+  expect(monoProjectsPhrase([project("app")])).toBe("app");
   expect(
-    monoProjectsPhrase([named("app"), named("site"), named("api")]),
+    monoProjectsPhrase([project("app"), project("site"), project("api")]),
   ).toBe("app, site and api");
 });
 
 it("forgets its background along with the Mono", () => {
-  const mono = project("app");
+  const mono = createMono();
   saveProjectChatBackgroundSettings(monoBackgroundKey(mono.id), {
     path: "/bg/mono.png",
     emptyOpacity: 0.24,
