@@ -13,23 +13,6 @@ vi.mock("./MonoChangesView", () => ({
   MonoChangesView: () => createElement("p", { "data-changes-view": "" }),
 }));
 
-vi.mock("../../sessions/data/sessionStore", async (original) => ({
-  ...(await original<object>()),
-  // Both launches are still saved; deleted ones are hidden by default.
-  listSessionsByProject: async (cwd: string) =>
-    ["a", "b"].map((id) => ({
-      id,
-      cwd,
-      harness: "codex",
-      model: "codex:gpt-5.4",
-      runtimeMode: "auto",
-      title: id,
-      createdAt: 1,
-      updatedAt: 1,
-    })),
-  getSession: async () => null,
-}));
-
 let container: HTMLDivElement;
 let root: Root;
 
@@ -116,6 +99,17 @@ it("names only the open tab, with its count, and switches tabs", async () => {
   expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
   act(() => tabs()[1].click());
   expect(onTabChange).toHaveBeenCalledWith("documents");
+});
+
+it("gives a project no sessions or habits tab, since its threads have the project sidebar", async () => {
+  await render("sessions", vi.fn(), { project: true });
+  expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
+    "Documents",
+    "Changes",
+  ]);
+  // Asked for a tab it has no longer, it lands on Documents.
+  expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
+  expect(tabs()[0].textContent).toBe("Documents1");
 });
 
 it("toggles activity from beside the panel toggle", async () => {
@@ -219,7 +213,7 @@ it("shows documents in their own tab, and a new-habit button only on Habits", as
   expect(container.querySelector('[aria-label="New habit"]')).not.toBeNull();
 });
 
-it("opens a session over the list, at the same width, with back, workspace and hide", async () => {
+it("opens a session over the list, with back, workspace and hide", async () => {
   const onBackFromSession = vi.fn();
   const onOpenSessionInWorkspace = vi.fn();
   const onClose = vi.fn();

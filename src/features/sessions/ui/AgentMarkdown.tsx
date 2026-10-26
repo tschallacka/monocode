@@ -1,3 +1,4 @@
+import { MarkdownLinkContext } from "./markdownLinks";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -179,13 +180,6 @@ const FileOpenContext = createContext<{
 
 const RemoteMediaContext = createContext(false);
 
-/**
- * Shows an in-app link (such as a coordinator's `#thread-<id>`) as something
- * of its own. Returning undefined leaves the link as it is.
- */
-export const MarkdownLinkContext = createContext<
-  ((href: string, children: ReactNode) => ReactNode | undefined) | undefined
->(undefined);
 /** Show local images and videos a reply links to, rather than the links. */
 const LocalMediaContext = createContext(false);
 
@@ -436,8 +430,18 @@ function MarkdownCode({
     fence.language.toLowerCase(),
   );
 
+  // Which label the header shows, for the CSS. A `:has()` over the shell
+  // made WebKit restyle the whole page for every streamed word.
+  const label = fence.filePath
+    ? "path"
+    : isPlaintextFallback
+      ? fence.language
+        ? "fallback"
+        : "untagged"
+      : undefined;
+
   return (
-    <div className="markdown-code-shell" dir="ltr">
+    <div className="markdown-code-shell" dir="ltr" data-code-label={label}>
       {iconName ? (
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name={iconName} isDir={false} />

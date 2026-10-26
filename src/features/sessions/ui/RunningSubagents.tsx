@@ -32,6 +32,8 @@ type Props = {
   stoppable?: ReadonlySet<string>;
   /** The runs still working under a run, which the dock nests beneath it. */
   childrenOf?: (block: Block) => Block[];
+  /** False while another tab is in front: its clocks hold still. */
+  visible?: boolean;
 };
 
 const NO_CHILDREN = (): Block[] => [];
@@ -73,6 +75,7 @@ export function RunningSubagents({
   onStop,
   stoppable,
   childrenOf = NO_CHILDREN,
+  visible = true,
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
@@ -89,7 +92,9 @@ export function RunningSubagents({
     if (open) for (const child of children) place(child, depth + 1, seen);
   };
   for (const block of runs) place(block, 0, new Set());
-  const ticking = live > 0;
+  // A hidden pane's session is frozen, so its runs would read as running
+  // (and re-render every second) until the pane is shown again.
+  const ticking = live > 0 && visible;
 
   // A stop that never lands gives the button back rather than spinning on.
   useEffect(() => {
@@ -282,19 +287,25 @@ function Row({
  * steered into that run joins it, so its runs stay counted.
  */
 export function runningSubagents(blocks: Block[]): Block[] {
-  const turn: Block[] = [];
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const block = blocks[i];
+  // Runs every streamed update: find the turn's start, then slice it once
+  // (building it with unshift was quadratic in the turn's length).
+  let start = blocks.length;
+  while (start > 0) {
+    const block = blocks[start - 1];
     if (block.role === "user" && !block.internal && !block.steered) break;
-    turn.unshift(block);
+    start -= 1;
   }
-  return turn.filter(
+  const turn = blocks.slice(start);
+  const runs = turn.filter(
     (block) =>
       isSubagentBlock(block) &&
       toolCallState(block) === "pending" &&
       !isSupersededSyntheticSubagent(block, turn),
   );
+  return runs.length ? runs : NO_RUNS;
 }
+
+const NO_RUNS: Block[] = [];
 
 /**
  * Runs launched into the background. Their Agent call returns as soon as the

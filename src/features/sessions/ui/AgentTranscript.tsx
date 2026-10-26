@@ -61,7 +61,12 @@ import {
 } from "./useToolDetail";
 import { HistoryTurn } from "./HistoryTurn";
 import { useFoldWork } from "../../settings/model/displayPrefs";
-import { useSubagentAccess, useSubagentRunBlocks } from "./subagentAccess";
+import {
+  SubagentAccessContext,
+  useSubagentAccess,
+  useSubagentRunBlocks,
+  type SubagentAccess,
+} from "./subagentAccess";
 import { streamMeasurement } from "../model/streamingPerformance";
 import { useReplyReflowAnchor } from "./useReplyReflowAnchor";
 import { FilePreview } from "../../files/ui/FilePreview";
@@ -133,6 +138,10 @@ import { useBottomChatMotion } from "../hooks/useBottomChatMotion";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { TranscriptLayout } from "../../settings/model/appearance";
 import { AgentMarkdown } from "./AgentMarkdown";
+import {
+  MarkdownLinkContext,
+  type MarkdownLinkRenderer,
+} from "./markdownLinks";
 import { MonoWorkTicker } from "./MonoWorkTicker";
 import { monoWorkStatus } from "../model/monoWorkStatus";
 import { isEmojiOnlyMessage } from "../model/emojiMessage";
@@ -308,7 +317,17 @@ type Props = {
   managed?: boolean;
   /** Saved session that omitted tool output is fetched from. */
   sessionId?: string;
+  /**
+   * Shows an in-app link (a coordinator's `#thread-<id>`) as something of its
+   * own. A prop rather than an outer provider: the transcript pool parks and
+   * measures this element, so a wrapper would hide it from the pool.
+   */
+  renderLink?: MarkdownLinkRenderer;
+  /** Lets a subagent run be entered and read in full; a prop for the same reason. */
+  subagentAccess?: SubagentAccess;
 };
+
+const NO_SUBAGENT_ACCESS: SubagentAccess = {};
 
 function AgentTranscriptComponent({
   blocks: sourceBlocks,
@@ -392,7 +411,8 @@ function AgentTranscriptComponent({
     () => lastUserTurnBlock(blocks)?.id,
     [blocks],
   );
-  const transcriptImages = useMemo(
+  // Walking every reply for images only pays off once the lightbox opens.
+  const transcriptImages = useCallback(
     () => collectTranscriptImages(blocks, cwd),
     [blocks, cwd],
   );
@@ -811,6 +831,7 @@ function AgentTranscriptComponent({
     };
   }, [bottomAligned, scrollerEl, followTranscript, setShowJump, visible]);
 
+  usePromptHover(scrollerEl);
   useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll);
   useReplyReflowAnchor(
     scrollerEl,
@@ -1914,7 +1935,13 @@ export const AgentTranscript = memo(
       <TranscriptVisibility.Provider value={props.visible ?? true}>
         <TranscriptPacing.Provider value={!props.bottomAligned}>
           <ToolDetailSession.Provider value={props.sessionId}>
-            <AgentTranscriptComponent {...props} />
+            <MarkdownLinkContext.Provider value={props.renderLink}>
+              <SubagentAccessContext.Provider
+                value={props.subagentAccess ?? NO_SUBAGENT_ACCESS}
+              >
+                <AgentTranscriptComponent {...props} />
+              </SubagentAccessContext.Provider>
+            </MarkdownLinkContext.Provider>
           </ToolDetailSession.Provider>
         </TranscriptPacing.Provider>
       </TranscriptVisibility.Provider>
@@ -3353,6 +3380,39 @@ function sameActivity(a: ActivityPhasesProps, b: ActivityPhasesProps): boolean {
     a.blocks.length === b.blocks.length &&
     a.blocks.every((block, index) => block === b.blocks[index])
   );
+}
+
+/**
+ * Marks the turn whose prompt or day stamp is under the pointer, so its
+ * reply actions stay hidden. CSS `:has(:hover)` did this, but made WebKit
+ * restyle the whole page on every hover change and streamed word.
+ */
+function usePromptHover(scroller: HTMLElement | null) {
+  useEffect(() => {
+    if (!scroller) return;
+    let marked: HTMLElement | null = null;
+    const mark = (turn: HTMLElement | null) => {
+      if (turn === marked) return;
+      marked?.removeAttribute("data-prompt-hover");
+      turn?.setAttribute("data-prompt-hover", "");
+      marked = turn;
+    };
+    const onOver = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest(
+        "[data-prompt-anchor], [data-day-separator]",
+      );
+      mark(anchor?.closest<HTMLElement>(".transcript-turn") ?? null);
+    };
+    const onLeave = () => mark(null);
+    scroller.addEventListener("pointerover", onOver);
+    scroller.addEventListener("pointerleave", onLeave);
+    return () => {
+      scroller.removeEventListener("pointerover", onOver);
+      scroller.removeEventListener("pointerleave", onLeave);
+      mark(null);
+    };
+  }, [scroller]);
 }
 
 /**

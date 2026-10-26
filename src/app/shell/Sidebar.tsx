@@ -219,7 +219,7 @@ import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GitHistoryGraph } from "../../features/source-control/ui/GitHistoryGraph";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
-  isMonoSession,
+  listMonos,
   listAgentMonos,
   MONO_STATUS_LABEL,
   monoLook,
@@ -422,8 +422,19 @@ type Props = {
   onDismissUpdate?: () => void;
   /** The Monos on the rail; absent while Monos are off. */
   monos?: MonoRailProps;
-  /** A Mono fills the main area, which has no project sidebar. */
+  /** A Claude Project, or a Mono, fills the main area. */
   monoViewActive?: boolean;
+  /**
+   * A Claude Project's own sidebar, shown in the session sidebar's place
+   * while the project is open. Gets the window chrome to put above it when
+   * the rail is hidden.
+   */
+  projectPanel?: (topBar: ReactNode) => ReactNode;
+  /**
+   * Leaves the view covering the workspace (an app view or a project) for
+   * the rail's workspace tabs. Back may stop on the way (a project's chat).
+   */
+  onLeaveView?: () => void;
   /** The Claude Projects on the rail; absent while they are off. */
   coordinators?: CoordinatorRailProps;
 };
@@ -521,6 +532,8 @@ function SidebarComponent({
   onDismissUpdate,
   monos,
   monoViewActive = false,
+  projectPanel,
+  onLeaveView,
   coordinators,
 }: Props) {
   const trafficLightsVisible = useTrafficLightsVisible();
@@ -786,7 +799,15 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
+  const rosterSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
+  // One lookup per roster change, not one storage read per listed session.
+  const monoSessionIds = useMemo(
+    () =>
+      new Set(
+        listMonos().flatMap((mono) => (mono.sessionId ? [mono.sessionId] : [])),
+      ),
+    [rosterSnap],
+  );
   // A project's threads live in its threads list, not the workspace's.
   const threadsSnap = useSyncExternalStore(
     subscribeProjectThreads,
@@ -799,7 +820,7 @@ function SidebarComponent({
     sessionFolders,
   ).filter(
     (session) =>
-      !isMonoSession(session.id) &&
+      !monoSessionIds.has(session.id) &&
       !projectThreadIds.has(session.id) &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&
@@ -2560,6 +2581,54 @@ function SidebarComponent({
     </>
   );
 
+  // Window chrome atop the column when no rail carries it.
+  const columnTopBar = titleBarAbove ? null : (
+    <div
+      className="flex h-10 shrink-0 select-none items-center border-b border-stroke pr-1.5"
+      data-tauri-drag-region="deep"
+    >
+      {trafficLightsVisible ? <div className="w-[78px] shrink-0" /> : null}
+      <DevModeSlot />
+      <TabVisitNav
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        onGoBack={onGoBack}
+        onGoForward={onGoForward}
+        onTogglePanel={compactProjectRail ? undefined : onToggleProjectRail}
+      />
+    </div>
+  );
+  const resizeHandle = (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={resize.width}
+      aria-valuemin={minWidth}
+      aria-valuemax={MAX_WIDTH}
+      className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none${
+        inset
+          ? ""
+          : resize.dragging
+            ? " bg-content/15"
+            : " hover:bg-content/10"
+      }`}
+      onPointerDown={resize.onPointerDown}
+      onDoubleClick={resize.onDoubleClick}
+    />
+  );
+  // A project open in the main area shows its own sidebar in this column.
+  const projectPanelVisible =
+    open && monoViewActive && !otherViewActive && !!projectPanel;
+  const projectPanelContent = projectPanelVisible ? (
+    <aside
+      ref={resize.setPaneRef}
+      className="relative flex h-full min-h-0 shrink-0 flex-col body-glass border-r border-stroke"
+    >
+      {projectPanel(railVisible ? null : columnTopBar)}
+      {resizeHandle}
+    </aside>
+  ) : null;
   const graphPane = paneHost && paneTab === "graph" ? (
     <div
       role="tabpanel"
@@ -2604,24 +2673,7 @@ function SidebarComponent({
         </>
       ) : (
         <>
-          {titleBarAbove ? null : (
-            <div
-              className="flex h-10 shrink-0 select-none items-center border-b border-stroke pr-1.5"
-              data-tauri-drag-region="deep"
-            >
-              {trafficLightsVisible ? <div className="w-[78px] shrink-0" /> : null}
-              <DevModeSlot />
-              <TabVisitNav
-                canGoBack={canGoBack}
-                canGoForward={canGoForward}
-                onGoBack={onGoBack}
-                onGoForward={onGoForward}
-                onTogglePanel={
-                  compactProjectRail ? undefined : onToggleProjectRail
-                }
-              />
-            </div>
-          )}
+          {columnTopBar}
           {compactRailVisible ? workspaceHeader : null}
           {onSelectProject && !compactRailVisible ? (
             <SidebarProjectPicker
@@ -2821,10 +2873,7 @@ function SidebarComponent({
                                 const collapsed = !entry.collapsed;
                                 if (isReminders) {
                                   setReminderSessionsCollapsed(collapsed);
-                                  saveReminderSessionsCollapsed(
-                                    cwd,
-                                    collapsed,
-                                  );
+                                  saveReminderSessionsCollapsed(cwd, collapsed);
                                   return;
                                 }
                                 setPinnedSessionsCollapsed(collapsed);
@@ -3204,23 +3253,7 @@ function SidebarComponent({
           onClose={() => setLinkingSession(null)}
         />
       ) : null}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        aria-valuenow={resize.width}
-        aria-valuemin={minWidth}
-        aria-valuemax={MAX_WIDTH}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none${
-          inset
-            ? ""
-            : resize.dragging
-              ? " bg-content/15"
-              : " hover:bg-content/10"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-      />
+      {resizeHandle}
     </aside>
   );
 
@@ -3255,7 +3288,7 @@ function SidebarComponent({
           automationsActive={automationsActive}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
-          onLeaveActive={onGoBack}
+          onLeaveActive={onLeaveView ?? onGoBack}
           titleBarAbove={titleBarAbove}
           monos={railMonos}
           monoViewActive={monoViewActive}
@@ -3311,13 +3344,18 @@ function SidebarComponent({
   return (
     <div
       className={`flex h-full shrink-0 ${
-        railVisible || compactRailVisible || sidebarVisible || drawerRendered
+        railVisible ||
+        compactRailVisible ||
+        sidebarVisible ||
+        projectPanelVisible ||
+        drawerRendered
           ? ""
           : "hidden"
       }`}
     >
       {rails}
       {sidebarVisible ? sidebarContent : null}
+      {projectPanelContent}
       {paneHost?.host && paneTab
         ? createPortal(
             <RightPanel

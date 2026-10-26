@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
   Clock,
@@ -54,11 +54,9 @@ const TABS: {
   { id: "changes", label: "Changes", icon: FileDiff },
 ];
 
-/** A project's overview speaks of threads and has no habits. */
+/** A project keeps no habits, and its threads have the project sidebar. */
 const PROJECT_TABS: typeof TABS = TABS.filter(
-  (entry) => entry.id !== "habits",
-).map((entry) =>
-  entry.id === "sessions" ? { ...entry, label: "Threads" } : entry,
+  (entry) => entry.id !== "habits" && entry.id !== "sessions",
 );
 
 /** The conversation's recorded changes, reviewed and committed on their tab. */
@@ -98,11 +96,8 @@ type Props = {
   shownSession?: ShownMonoSession;
   onBackFromSession?: () => void;
   onOpenSessionInWorkspace?: (sessionId: string) => void | Promise<void>;
-  /** A Claude Project: its sessions are threads, and it keeps no habits. */
+  /** A Claude Project: its threads have the project sidebar, and it keeps no habits. */
   project?: boolean;
-  /** The shown thread fills the project view. */
-  expanded?: boolean;
-  onToggleExpanded?: () => void;
   /** A document it wrote, open over the list until Back. */
   shownDocumentId?: string;
   onBackFromDocument?: () => void;
@@ -114,7 +109,8 @@ type Props = {
 
 /**
  * The Mono's work at a glance: the sessions it started, its habits and the
- * documents it wrote. Who it is and how it works live in its settings.
+ * documents it wrote. A project's threads have the project sidebar instead.
+ * Who it is and how it works live in its settings.
  */
 export function MonoOverview({
   open,
@@ -135,8 +131,6 @@ export function MonoOverview({
   onBackFromSession = () => {},
   onOpenSessionInWorkspace = () => {},
   project = false,
-  expanded = false,
-  onToggleExpanded,
   shownDocumentId,
   onBackFromDocument = () => {},
   onOpenFile,
@@ -145,8 +139,11 @@ export function MonoOverview({
   windowControls,
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
-  // A project has no habits tab to land on.
-  const tab = project && requestedTab === "habits" ? "sessions" : requestedTab;
+  // A project has no habits or sessions tab to land on.
+  const tab =
+    project && (requestedTab === "habits" || requestedTab === "sessions")
+      ? "documents"
+      : requestedTab;
   const habits = useHabits(monoId, state.status);
   const actions = habitActions(monoId);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -160,15 +157,9 @@ export function MonoOverview({
   if (tab === "changes" && !changesVisited) setChangesVisited(true);
   // The activity button toggles back to the tab it was opened from.
   const lastTab = useRef<MonoOverviewTab>(
-    tab === "activity" ? "sessions" : tab,
+    tab === "activity" ? "documents" : tab,
   );
   if (tab !== "activity") lastTab.current = tab;
-  // Another Mono starts at its own front page, with all its sessions.
-  useEffect(() => {
-    setRoutes([]);
-    setQuery("");
-    setFilters(DEFAULT_SESSION_SIDEBAR_FILTERS);
-  }, [monoId]);
   const push = (route: Route) => setRoutes((current) => [...current, route]);
   const back = () => setRoutes((current) => current.slice(0, -1));
 
@@ -205,19 +196,19 @@ export function MonoOverview({
   });
 
   // What the overview opened goes on top of everything, the way it would
-  // from the list beneath.
+  // from the list beneath. One page for whichever session it shows, so going
+  // from one to another swaps it in place.
   if (shownSession)
     pages.push({
-      key: `session:${shownSession.sessionId}`,
+      key: "session",
       node: (
         <LaunchedSessionPage
+          key={shownSession.sessionId}
           title={shownSession.title}
           onBack={onBackFromSession}
           onOpenInWorkspace={() =>
             onOpenSessionInWorkspace(shownSession.sessionId)
           }
-          expanded={expanded}
-          onToggleExpanded={onToggleExpanded}
           onClose={onClose}
         >
           {shownSession.pane}
@@ -252,12 +243,9 @@ export function MonoOverview({
   return (
     <MonoSidebar
       open={open}
-      kind="details"
       label={`${agent.name} overview`}
       color={agent.color}
       windowControls={windowControls}
-      expanded={expanded && !!shownSession}
-      wide={project}
     >
       <PanelStack pages={pages}>
         {/* Pages replace this header too, keeping their back button at the top. */}
@@ -322,6 +310,8 @@ export function MonoOverview({
             data-mono-overview={tab === "changes" ? "changes" : undefined}
           >
             <MonoChangesView
+              // Another conversation's changes start their own review.
+              key={changes.sessionId}
               sessionId={changes.sessionId}
               cwd={changes.cwd}
               request={changes.request}
@@ -363,6 +353,7 @@ export function MonoOverview({
                   query={query}
                   filters={filters}
                   onOpenSession={onOpenSession}
+                  covered={pages.length > 0}
                 />
               </div>
             ) : (

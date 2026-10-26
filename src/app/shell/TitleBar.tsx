@@ -44,6 +44,7 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
 import { PixelMascot } from "../../features/projects/ui/PixelMascot";
+import type { ThreadStatus } from "../../features/coordinator/model/coordinator";
 import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
 import {
   MONO_STATUS_LABEL,
@@ -119,7 +120,12 @@ type Props = {
    * The Mono filling the main area. It takes the tabs' place, and nothing
    * project-scoped belongs beside it.
    */
-  mono?: { look: MonoLook; state: MonoState };
+  mono?: {
+    look: MonoLook;
+    state: MonoState;
+    /** The project's thread shown in its chat's place. */
+    thread?: { title: string; status: ThreadStatus };
+  };
   /**
    * Takes the tabs' place, as the inset layout's Settings does with its
    * breadcrumb and actions.
@@ -128,8 +134,6 @@ type Props = {
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
-  /** A project's threads: how many wait for the user and how many run. */
-  monoThreads?: ThreadCounts;
   onOpenMonoSettings?: () => void;
   /** The full-height Mono panel owns these while it is open. */
   hideWindowControls?: boolean;
@@ -672,42 +676,29 @@ export function TabVisitNav({
   );
 }
 
-type ThreadCounts = { waiting: number; busy: number };
-
 /** A Mono's overview toggle and settings, beside its conversation. */
 export function MonoViewActions({
   name,
   overviewOpen,
   onToggleOverview,
   onOpenSettings,
-  threads,
   className = "",
 }: {
   name: string;
   overviewOpen: boolean;
   onToggleOverview?: () => void;
   onOpenSettings?: () => void;
-  /** A project's threads, counted on the overview button. */
-  threads?: ThreadCounts;
   className?: string;
 }) {
   const label = overviewOpen ? "Hide overview" : "Show overview";
-  const detail = threads
-    ? [
-        threads.waiting ? `${threads.waiting} waiting for you` : "",
-        threads.busy ? `${threads.busy} busy` : "",
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : "";
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       {onToggleOverview ? (
         <button
           type="button"
           aria-pressed={overviewOpen}
-          title={detail ? `${label} (${detail})` : label}
-          aria-label={detail ? `${label}, ${detail}` : label}
+          title={label}
+          aria-label={label}
           data-tauri-drag-region="false"
           onClick={onToggleOverview}
           className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
@@ -718,17 +709,6 @@ export function MonoViewActions({
         >
           <DashboardSquare className="size-3.5" strokeWidth={1.75} />
           Overview
-          {threads?.busy ? (
-            <span className="flex items-center gap-1 rounded-full bg-accent/12 px-1.5 text-[10.5px] tabular-nums text-accent">
-              <TerminalSpinner className="inline-block w-2.5 select-none text-center text-[10px] leading-none" />
-              {threads.busy}
-            </span>
-          ) : null}
-          {threads?.waiting ? (
-            <span className="grid min-w-4 place-items-center rounded-full bg-amber-400/90 px-1 text-[10.5px] font-semibold tabular-nums leading-4 text-black">
-              {threads.waiting}
-            </span>
-          ) : null}
         </button>
       ) : null}
       {onOpenSettings ? (
@@ -776,7 +756,6 @@ function TitleBarComponent({
   content,
   onToggleMonoOverview,
   monoOverviewOpen = false,
-  monoThreads,
   onOpenMonoSettings,
   hideWindowControls = false,
   projectRailOpen = true,
@@ -1122,7 +1101,6 @@ function TitleBarComponent({
             overviewOpen={monoOverviewOpen}
             onToggleOverview={onToggleMonoOverview}
             onOpenSettings={onOpenMonoSettings}
-            threads={monoThreads}
             className="px-3"
           />
         ) : null}
@@ -1212,7 +1190,12 @@ function TitleBarComponent({
       ) : null}
       {/* Both the rail and the sidebar step aside without a project, so the
           title bar takes over the traffic lights and the rail toggle. */}
-      {projectless && railClosed && !compactRail && !inset ? (
+      {/* An open project's sidebar carries them instead, when it shows. */}
+      {projectless &&
+      railClosed &&
+      !compactRail &&
+      !inset &&
+      !(mono && sessionSidebarOpen) ? (
         <>
           {trafficLightsVisible ? <div className="w-[78px] shrink-0" /> : null}
           <div className="flex shrink-0 items-center px-1.5">
@@ -1262,7 +1245,7 @@ function TitleBarComponent({
         {content ? (
           content
         ) : mono && !inset ? (
-          <MonoTitle look={mono.look} state={mono.state} />
+          <MonoTitle look={mono.look} state={mono.state} thread={mono.thread} />
         ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1398,8 +1381,26 @@ function TitleBarComponent({
 
 export const TitleBar = memo(TitleBarComponent);
 
-/** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
+const THREAD_STATUS_TEXT: Record<ThreadStatus, string> = {
+  waiting: "Waiting for you",
+  busy: "Working",
+  inactive: "Idle",
+  solved: "Solved",
+};
+
+/**
+ * In a project's view the title bar names it and shows its status, or the
+ * thread shown in its chat's place and that thread's.
+ */
+function MonoTitle({
+  look,
+  state,
+  thread,
+}: {
+  look: MonoLook;
+  state: MonoState;
+  thread?: { title: string; status: ThreadStatus };
+}) {
   return (
     <div
       data-mono-title
@@ -1412,17 +1413,44 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
         still={state.status === "idle"}
         className="size-4 shrink-0"
       />
-      <span className="min-w-0 truncate text-[13px] font-medium text-content">
-        {look.name}
-      </span>
       <span
-        data-mono-status={state.status}
-        className={`shrink-0 text-[12px] ${
-          state.status === "needs-you" ? "text-accent" : "text-content/45"
+        className={`min-w-0 truncate text-[13px] font-medium ${
+          thread ? "max-w-[40%] shrink-0 text-content/55" : "text-content"
         }`}
       >
-        {MONO_STATUS_LABEL[state.status]}
+        {look.name}
       </span>
+      {thread ? (
+        <>
+          <ChevronRight
+            aria-hidden
+            className="size-3 shrink-0 text-content/35"
+          />
+          <span
+            data-thread-title
+            className="min-w-0 truncate text-[13px] font-medium text-content"
+          >
+            {thread.title}
+          </span>
+          <span
+            data-thread-status={thread.status}
+            className={`shrink-0 text-[12px] ${
+              thread.status === "waiting" ? "text-amber-400" : "text-content/45"
+            }`}
+          >
+            {THREAD_STATUS_TEXT[thread.status]}
+          </span>
+        </>
+      ) : (
+        <span
+          data-mono-status={state.status}
+          className={`shrink-0 text-[12px] ${
+            state.status === "needs-you" ? "text-accent" : "text-content/45"
+          }`}
+        >
+          {MONO_STATUS_LABEL[state.status]}
+        </span>
+      )}
     </div>
   );
 }

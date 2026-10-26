@@ -1672,7 +1672,11 @@ function useDiffIndex(
           // index immediately after the one we just read.
           publishing = true;
           try {
-            notifyGitChanged({ invalidatePending: false });
+            notifyGitChanged({
+              invalidatePending: false,
+              workingTreeOnly: true,
+              publishedIndexCwd: cwd,
+            });
           } finally {
             publishing = false;
           }

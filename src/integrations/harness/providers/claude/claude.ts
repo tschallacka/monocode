@@ -6,7 +6,10 @@ import type {
   TaskListItem,
   TaskListMeta,
 } from "../../../../features/sessions/model/session";
-import { loadClaudeHooks } from "../../../../features/settings/model/settings";
+import {
+  loadClaudeAutoCompactWindow,
+  loadClaudeHooks,
+} from "../../../../features/settings/model/settings";
 import {
   connectModHost,
   disconnectModHost,
@@ -1399,7 +1402,9 @@ function handleAgentLifecycle(
       toolUseId: started.toolUseId,
       agent: isAgentTaskType(started.taskType),
     });
-    if (!isAgentTaskType(started.taskType)) {
+    // A subagent's own subagents work inside its run; a row of their own
+    // would sit under Main with nothing to close it once the parent ends.
+    if (!isAgentTaskType(started.taskType) || started.nested) {
       syncBackgroundWait(live);
       return true;
     }
@@ -1432,6 +1437,14 @@ function handleAgentLifecycle(
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    // Progress names no parent, so a task this turn never started or listed
+    // (a nested subagent, or one from before the turn began) only updates a
+    // row that already exists. Opening one here leaves a run that never ends.
+    if (
+      !task &&
+      !(progress.toolUseId && live.toolsById.has(progress.toolUseId))
+    )
+      return true;
     if (task && !task.toolUseId) {
       task.toolUseId =
         progress.toolUseId ?? unclaimedAgentCall(live, task.description);
@@ -1517,7 +1530,9 @@ function handleAgentLifecycle(
       });
     }
   }
-  const liveTasks = allTasks.filter((task) => isAgentTaskType(task.taskType));
+  const liveTasks = allTasks.filter(
+    (task) => isAgentTaskType(task.taskType) && !task.nested,
+  );
   for (const id of [...live.agentTasks.keys()]) {
     if (!next.has(id)) completeAgentTask(live, id, "completed");
   }
@@ -2013,6 +2028,7 @@ function settingsKeyFor(input: HarnessSessionInput): string {
     context: input.modelSettings?.context,
     runtimeMode: input.runtimeMode,
     hooks: loadClaudeHooks(),
+    autoCompactWindow: loadClaudeAutoCompactWindow(),
   })}`;
 }
 
@@ -2043,6 +2059,14 @@ function launchOptions(
   }
   if (!loadClaudeHooks()) {
     settings.disableAllHooks = true;
+  }
+  // The env var outranks the per-model window `/autocompact` saves, so the
+  // MonoCode setting holds in every session.
+  const autoCompactWindow = loadClaudeAutoCompactWindow();
+  if (autoCompactWindow > 0) {
+    settings.env = {
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(autoCompactWindow),
+    };
   }
   return {
     model: resolveClaudeApiModelId(native, context),

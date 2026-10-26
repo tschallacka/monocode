@@ -976,6 +976,7 @@ describe("subagent messages", () => {
       taskType: "local_agent",
       backgrounded: true,
       ambient: false,
+      nested: false,
     });
     expect(
       parseTaskProgress({
@@ -1035,8 +1036,18 @@ describe("subagent messages", () => {
         ],
       }),
     ).toEqual([
-      { taskId: "t1", taskType: "local_agent", description: "Explore" },
-      { taskId: "bash_1", taskType: "local_bash", description: "sleep 10" },
+      {
+        taskId: "t1",
+        taskType: "local_agent",
+        description: "Explore",
+        nested: false,
+      },
+      {
+        taskId: "bash_1",
+        taskType: "local_bash",
+        description: "sleep 10",
+        nested: false,
+      },
     ]);
     expect(
       parseToolProgress({

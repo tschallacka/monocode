@@ -191,10 +191,33 @@ function parseMono(value: unknown): Mono | undefined {
 /** Every Mono, in the order the rail shows them. */
 export function listMonos(): Mono[] {
   migrateLegacyMonoStorage();
-  const parsed = readJson(ROSTER_KEY);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((entry) => parseMono(entry) ?? []);
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(ROSTER_KEY);
+  } catch {
+    raw = null;
+  }
+  // Looked up several times per render (and per session in the sidebar):
+  // parse the roster once per saved version. The same objects come back
+  // until it changes, so memos keyed on a Mono hold; callers never mutate.
+  if (!rosterCache || rosterCache.raw !== raw) {
+    let parsed: unknown;
+    try {
+      parsed = raw ? (JSON.parse(raw) as unknown) : undefined;
+    } catch {
+      parsed = undefined;
+    }
+    rosterCache = {
+      raw,
+      monos: Array.isArray(parsed)
+        ? parsed.flatMap((entry) => parseMono(entry) ?? [])
+        : [],
+    };
+  }
+  return [...rosterCache.monos];
 }
+
+let rosterCache: { raw: string | null; monos: Mono[] } | null = null;
 
 /** Monos of their own, without the project coordinators. */
 export function listAgentMonos(): Mono[] {
@@ -313,6 +336,39 @@ export function saveOpenMono(monoId: string | undefined): void {
     else localStorage.removeItem(OPEN_MONO_KEY);
   } catch {
     // The next launch opens the workspace instead; harmless.
+  }
+}
+
+const SHOWN_THREAD_KEY = "monocode:mono-shown-thread";
+
+function readShownThreads(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(SHOWN_THREAD_KEY) ?? "{}",
+    );
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The thread a Mono last showed over its overview, to open on next time. */
+export function loadShownThread(monoId: string): string | null {
+  const id = readShownThreads()[monoId];
+  return typeof id === "string" && id ? id : null;
+}
+
+export function saveShownThread(monoId: string, sessionId: string | null) {
+  const threads = readShownThreads();
+  if ((threads[monoId] ?? null) === sessionId) return;
+  if (sessionId) threads[monoId] = sessionId;
+  else delete threads[monoId];
+  try {
+    localStorage.setItem(SHOWN_THREAD_KEY, JSON.stringify(threads));
+  } catch {
+    // The Mono opens on its list instead; harmless.
   }
 }
 

@@ -4570,11 +4570,15 @@ pub(crate) fn resolve_repo_path(root: &Path, relative: &str) -> Result<String, S
 /// Any git can start a filter: in an LFS repo `status`, `diff`, `add`, and
 /// checkouts all run `git-lfs`, which a Finder launch's bare PATH lacks. The
 /// cached search path finds it without waiting on the login shell.
+///
+/// Git runs at normal priority: lowering it needs a `pre_exec` hook, which
+/// forces a fork of the whole app for every call. Reads are short-lived, and
+/// agents editing files trigger dozens of them a minute.
 fn git_cmd() -> Command {
-    let mut cmd = Command::new("git");
-    crate::background_work::configure_child(&mut cmd);
+    let path = crate::harness::cached_gui_search_path();
+    let mut cmd = Command::new(crate::harness::program_on_path("git", &path));
     crate::hide_window_console(&mut cmd);
-    cmd.env("PATH", crate::harness::cached_gui_search_path());
+    cmd.env("PATH", path);
     cmd
 }
 
@@ -6268,8 +6272,16 @@ fn is_chat_video(path: &Path) -> bool {
 /// Let the asset protocol stream one video file, so the chat can play it
 /// without reading it into memory. Only that file is added to the scope.
 #[tauri::command]
-pub fn allow_video_file(app: AppHandle, path: String) -> Result<StreamableVideo, String> {
-    let path = expand_home(&path);
+pub async fn allow_video_file(app: AppHandle, path: String) -> Result<StreamableVideo, String> {
+    // A sync command runs on the main thread, and stat can stall on iCloud,
+    // network or external volumes while the chat opens.
+    tauri::async_runtime::spawn_blocking(move || allow_video_file_sync(&app, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn allow_video_file_sync(app: &AppHandle, path: &str) -> Result<StreamableVideo, String> {
+    let path = expand_home(path);
     if !is_chat_video(&path) {
         return Err(format!("{}: not a playable video", path.display()));
     }
@@ -9474,6 +9486,15 @@ mod tests {
             .and_then(|(_, value)| value)
             .expect("git should get an explicit PATH");
         std::env::split_paths(path).collect()
+    }
+
+    /// A bare `git` with a PATH override makes std fork the whole app.
+    #[cfg(unix)]
+    #[test]
+    fn git_cmd_spawns_git_by_absolute_path() {
+        let program = PathBuf::from(git_cmd().get_program());
+        assert!(program.is_absolute(), "{program:?}");
+        assert_eq!(program.file_name().unwrap(), "git");
     }
 
     /// git-lfs and other filters live in Homebrew dirs a Finder launch lacks.
