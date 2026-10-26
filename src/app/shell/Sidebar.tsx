@@ -189,6 +189,7 @@ import {
 } from "../../features/files/ui/ExplorerMenu";
 import { FileTree } from "../../features/files/ui/FileTree";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
+import { openClaudeCodeSessionPicker } from "../../features/sessions/model/claudeCodeImport";
 import { SessionCardPreview } from "../../features/sessions/ui/SessionCardPreview";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
@@ -2454,6 +2455,11 @@ function SidebarComponent({
       {/* Inset, a new session is the + at the end of the title bar's tabs. */}
       <WorkspaceTitleActions
         onSearch={onGoToFile}
+        onPickUpClaudeCode={
+          !remoteProject && cwd && cwd !== "~"
+            ? () => openClaudeCodeSessionPicker(cwd)
+            : undefined
+        }
         onNew={inset ? undefined : onNew}
       />
       {headerProjectMenu.element}
@@ -4434,12 +4440,15 @@ function SidebarNavList({
 
 function WorkspaceTitleActions({
   onSearch,
+  onPickUpClaudeCode,
   onNew,
 }: {
   onSearch?: () => void;
+  /** Lists the Claude Code CLI sessions run in this project, to continue one. */
+  onPickUpClaudeCode?: () => void;
   onNew?: () => void;
 }) {
-  if (!onSearch && !onNew) return null;
+  if (!onSearch && !onPickUpClaudeCode && !onNew) return null;
   return (
     <div
       className="flex shrink-0 items-center gap-0.5"
@@ -4448,6 +4457,14 @@ function WorkspaceTitleActions({
       {onSearch ? (
         <IconButton label={`Go to File (${MOD}P)`} onClick={onSearch}>
           <Search className="size-3.5" strokeWidth={1.75} />
+        </IconButton>
+      ) : null}
+      {onPickUpClaudeCode ? (
+        <IconButton
+          label="Pick up a Claude Code session"
+          onClick={onPickUpClaudeCode}
+        >
+          <HarnessIcon harness="claude" className="size-3.5" />
         </IconButton>
       ) : null}
       {onNew ? (

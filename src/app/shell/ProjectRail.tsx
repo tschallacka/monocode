@@ -89,6 +89,8 @@ import { useNotificationProjects } from "../../features/notifications/hooks/useN
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
+import { openClaudeCodeSessionPicker } from "../../features/sessions/model/claudeCodeImport";
+import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   useRemoteMachineOnline,
   useRemoteMachines,
@@ -1278,6 +1280,18 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
           >
             <Internet className="size-3.5 shrink-0" strokeWidth={1.75} />
             Open folder on a machine…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              openClaudeCodeSessionPicker();
+            }}
+          >
+            <HarnessIcon harness="claude" className="size-3.5 shrink-0" />
+            Open a Claude Code session…
           </button>
         </Popover>
       ) : null}

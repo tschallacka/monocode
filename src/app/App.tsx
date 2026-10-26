@@ -99,7 +99,11 @@ import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
 import { ModStatusChips, ModToasts } from "../features/mods/ui/ModSurfaces";
 import { subscribeModPaneOpened } from "../features/mods/model/modHost";
 import { ClaudeCodeSessionPicker } from "../features/sessions/ui/ClaudeCodeSessionPicker";
-import { importClaudeCodeSession } from "../features/sessions/model/claudeCodeImport";
+import {
+  importClaudeCodeSession,
+  OPEN_CLAUDE_CODE_SESSION_EVENT,
+  type OpenClaudeCodeSessionDetail,
+} from "../features/sessions/model/claudeCodeImport";
 import { ResourcePressureNotice } from "../features/notifications/ui/ResourcePressureNotice";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { NewLayoutNotice } from "./shell/NewLayoutNotice";
@@ -1652,7 +1656,10 @@ function Workspace({
     useState<EditorNavigationTarget | null>(null);
   const editorNavigationToken = useRef(0);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
-  const [claudeCodePickerOpen, setClaudeCodePickerOpen] = useState(false);
+  // Open with the project it lists, or every session when picked from the
+  // Projects + or the palette.
+  const [claudeCodePicker, setClaudeCodePicker] =
+    useState<OpenClaudeCodeSessionDetail | null>(null);
   const [filePickerInitialQuery, setFilePickerInitialQuery] = useState("");
   const [filePickerResetToken, setFilePickerResetToken] = useState(0);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(
@@ -13080,6 +13087,15 @@ function Workspace({
     window.addEventListener(OPEN_REMOTE_PROJECT_EVENT, open);
     return () => window.removeEventListener(OPEN_REMOTE_PROJECT_EVENT, open);
   }, []);
+  useEffect(() => {
+    const open = (event: Event) =>
+      setClaudeCodePicker(
+        (event as CustomEvent<OpenClaudeCodeSessionDetail>).detail ?? {},
+      );
+    window.addEventListener(OPEN_CLAUDE_CODE_SESSION_EVENT, open);
+    return () =>
+      window.removeEventListener(OPEN_CLAUDE_CODE_SESSION_EVENT, open);
+  }, []);
 
   useEffect(() => {
     const onOpenMcp = () => openSettings("mcp");
@@ -15914,21 +15930,27 @@ function Workspace({
                 if (id === "reload") actions.current.onReload();
                 if (id === "open-claude-code-session") {
                   setFilePickerOpen(false);
-                  setClaudeCodePickerOpen(true);
+                  setClaudeCodePicker({});
                 }
               }}
               onClose={() => setFilePickerOpen(false)}
             />
           ) : null}
 
-          {claudeCodePickerOpen ? (
+          {claudeCodePicker ? (
             <ClaudeCodeSessionPicker
+              cwd={claudeCodePicker.cwd}
               onPick={async (source) => {
                 const sessionId = await importClaudeCodeSession(source);
+                // Picked from every session: its folder becomes a project.
+                if (!claudeCodePicker.cwd && looksLikeProject(source.cwd))
+                  setRecents(
+                    rememberProject(normalizeProjectPath(source.cwd)),
+                  );
                 await onSelectHistorySession(sessionId);
-                setClaudeCodePickerOpen(false);
+                setClaudeCodePicker(null);
               }}
-              onClose={() => setClaudeCodePickerOpen(false)}
+              onClose={() => setClaudeCodePicker(null)}
             />
           ) : null}
 
