@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   NO_RUNNER_SIGNALS,
   RANDOM_ACTS,
@@ -8,6 +8,13 @@ import {
 } from "../model/runnerEvents";
 import { createDirector, resetLaps } from "./runnerDirector";
 import type { ActView, LiveCoin, Stage } from "./runnerStage";
+
+// The director turns night on from the wall clock; hold it at midday so a
+// run after 22:00 doesn't put a night sky on stage.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 0, 1, 12));
+});
 
 afterEach(() => {
   vi.useRealTimers();
