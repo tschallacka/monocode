@@ -43,6 +43,7 @@ import {
   applyClaudeTaskTool,
   claudeTaskListFinished,
   isUsageLimitResult,
+  mcpServersFromStatus,
   normalizeClaudeCliEffort,
   parseBackgroundTasks,
   parseControlCancelId,
@@ -73,6 +74,7 @@ import {
   type ClaudeAgentTaskNotification,
   type ClaudeCliSettings,
   type ClaudeControlRequest,
+  type ClaudeMcpServerStatus,
 } from "./claudeProtocol";
 import { isAgentToolName } from "../../core/preview";
 import { joinStreamText, snapshotRemainder } from "../../core/streamText";
@@ -179,6 +181,8 @@ type Live = {
   pendingAssistantBoundary: boolean;
   manualCompaction: boolean;
   compactionConfirmed: boolean;
+  /** Control requests waiting on Claude's answer, by request id. */
+  controlReplies?: Map<string, (response: Record<string, unknown>) => void>;
 };
 
 type Resume = {
@@ -339,6 +343,100 @@ export async function stopClaudeBackgroundTask(
       subtype: "stop_task",
       task_id: taskId,
     }),
+  );
+}
+
+/** How long a control request waits on Claude before giving up. */
+const CONTROL_REPLY_MS = 10_000;
+
+/** Sends a control request and resolves with Claude's `response` record. */
+function requestControl(
+  live: Live,
+  sessionId: string,
+  request: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const requestId = nextControlId(live);
+  const replies = (live.controlReplies ??= new Map<
+    string,
+    (response: Record<string, unknown>) => void
+  >());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      replies.delete(requestId);
+      reject(new Error("Claude did not answer"));
+    }, CONTROL_REPLY_MS);
+    replies.set(requestId, (response) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+    writeJson(sessionId, buildControlRequest(requestId, request)).catch(
+      (error: unknown) => {
+        clearTimeout(timer);
+        replies.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+/**
+ * The session's MCP servers as its running Claude process reports them, or
+ * null while no process runs for it: one starts with the next message.
+ */
+export async function claudeMcpStatus(
+  sessionId: string,
+): Promise<ClaudeMcpServerStatus[] | null> {
+  const live = liveByThread.get(sessionId);
+  if (!live) return null;
+  return mcpServersFromStatus(
+    await requestControl(live, sessionId, { subtype: "mcp_status" }),
+  );
+}
+
+const RECONNECT_POLL_MS = 500;
+const RECONNECT_MS = 20_000;
+
+/**
+ * Restarts one MCP server of the running session, the way Claude Code's
+ * `/chrome` reconnects the extension: off, then on again, then the status it
+ * settled on. Claude does not answer a toggle, so the status is polled.
+ */
+export async function reconnectClaudeMcpServer(
+  sessionId: string,
+  serverName: string,
+): Promise<ClaudeMcpServerStatus | null> {
+  const live = liveByThread.get(sessionId);
+  if (!live) return null;
+  const toggle = (enabled: boolean) =>
+    writeJson(
+      sessionId,
+      buildControlRequest(nextControlId(live), {
+        subtype: "mcp_toggle",
+        serverName,
+        enabled,
+      }),
+    );
+  const statusOf = async () =>
+    (await claudeMcpStatus(sessionId))?.find(
+      (server) => server.name === serverName,
+    ) ?? null;
+  const until = async (
+    done: (status: ClaudeMcpServerStatus | null) => boolean,
+  ) => {
+    const deadline = Date.now() + RECONNECT_MS;
+    let status = await statusOf();
+    while (!done(status) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, RECONNECT_POLL_MS));
+      status = await statusOf();
+    }
+    return status;
+  };
+  await toggle(false);
+  await until((status) => status?.status === "disabled");
+  await toggle(true);
+  return until(
+    (status) =>
+      !!status && status.status !== "disabled" && status.status !== "pending",
   );
 }
 
@@ -719,6 +817,13 @@ function handleLine(sessionId: string, live: Live, line: string): void {
 
   if (type === "control_response") {
     markInitialized(live);
+    const response = asRecord(rec.response);
+    const requestId = response && stringField(response, "request_id");
+    const reply = requestId ? live.controlReplies?.get(requestId) : undefined;
+    if (response && requestId && reply) {
+      live.controlReplies?.delete(requestId);
+      reply(response);
+    }
     return;
   }
 
