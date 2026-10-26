@@ -919,12 +919,16 @@ fn env_str<'a>(env: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
 }
 
 fn endpoint_token(env: &Map<String, Value>) -> Option<&str> {
-    ENDPOINT_TOKEN_ENV.iter().find_map(|name| env_str(env, name))
+    ENDPOINT_TOKEN_ENV
+        .iter()
+        .find_map(|name| env_str(env, name))
 }
 
 /// The endpoint an account uses, or `None` for a claude.ai sign-in.
 pub(crate) fn claude_account_endpoint(account_dir: &Path) -> Option<ClaudeEndpoint> {
-    let settings = read_json(&account_dir.join("settings.json")).ok().flatten()?;
+    let settings = read_json(&account_dir.join("settings.json"))
+        .ok()
+        .flatten()?;
     let env = account_env(&settings)?;
     endpoint_token(env)?;
     let usage_url = read_json(&account_dir.join(ENDPOINT_FILE))
@@ -940,7 +944,9 @@ pub(crate) fn claude_account_endpoint(account_dir: &Path) -> Option<ClaudeEndpoi
 
 /// The token an endpoint account sends, for MonoCode's own usage requests.
 pub(crate) fn claude_account_token(account_dir: &Path) -> Option<String> {
-    let settings = read_json(&account_dir.join("settings.json")).ok().flatten()?;
+    let settings = read_json(&account_dir.join("settings.json"))
+        .ok()
+        .flatten()?;
     endpoint_token(account_env(&settings)?).map(str::to_string)
 }
 
@@ -979,7 +985,11 @@ fn edit_account_env(
         *env = Value::Object(Map::new());
     }
     edit(env.as_object_mut().expect("env is an object"))?;
-    if map.get("env").and_then(Value::as_object).is_some_and(Map::is_empty) {
+    if map
+        .get("env")
+        .and_then(Value::as_object)
+        .is_some_and(Map::is_empty)
+    {
         map.remove("env");
     }
     write_json_atomic(&path, &root)
@@ -1308,7 +1318,10 @@ mod tests {
             read(&account.join("settings.json")),
             json!({ "env": { "ANTHROPIC_API_KEY": "tok" } })
         );
-        assert_eq!(claude_account_endpoint(&account).unwrap().host(), "Anthropic API");
+        assert_eq!(
+            claude_account_endpoint(&account).unwrap().host(),
+            "Anthropic API"
+        );
 
         set_claude_account_endpoint(&account, "https://other.dev", "", "").unwrap();
         assert_eq!(
