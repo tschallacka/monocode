@@ -311,6 +311,46 @@ export function buildClaudeSpawnArgs(input: {
   return args;
 }
 
+/** The MCP server Claude Code runs to drive the Chrome extension. */
+export const CLAUDE_CHROME_SERVER = "claude-in-chrome";
+
+/** One MCP server as a live Claude process reports it. */
+export type ClaudeMcpServerStatus = {
+  name: string;
+  /** `connected`, `pending`, `failed`, `needs-auth` or `disabled`. */
+  status: string;
+  tools: number;
+  error?: string;
+};
+
+/**
+ * The servers in an `mcp_status` control response. A refused request throws
+ * with Claude's reason, so the caller can say why it has no answer.
+ */
+export function mcpServersFromStatus(
+  response: Record<string, unknown>,
+): ClaudeMcpServerStatus[] {
+  if (stringField(response, "subtype") === "error") {
+    throw new Error(stringField(response, "error") ?? "Claude refused");
+  }
+  const servers = asRecord(response.response)?.mcpServers;
+  if (!Array.isArray(servers)) return [];
+  return servers.flatMap((entry) => {
+    const server = asRecord(entry);
+    const name = server && stringField(server, "name");
+    if (!server || !name) return [];
+    const error = stringField(server, "error");
+    return [
+      {
+        name,
+        status: stringField(server, "status") ?? "unknown",
+        tools: Array.isArray(server.tools) ? server.tools.length : 0,
+        ...(error ? { error } : {}),
+      },
+    ];
+  });
+}
+
 export function buildControlRequest(
   requestId: string,
   request: Record<string, unknown>,
@@ -866,7 +906,9 @@ export function assistantTextBlocks(rec: Record<string, unknown>): string[] {
 }
 
 /** Reasoning a message carries, used to mirror a subagent's thinking. */
-export function assistantThinkingBlocks(rec: Record<string, unknown>): string[] {
+export function assistantThinkingBlocks(
+  rec: Record<string, unknown>,
+): string[] {
   const message = asRecord(rec.message);
   const content = message?.content;
   if (!Array.isArray(content)) return [];
@@ -1022,8 +1064,7 @@ export function applyClaudeTaskTool(
   if (name === "TaskCreate") {
     const text = [input.subject, input.activeForm, input.description]
       .find(
-        (value): value is string =>
-          typeof value === "string" && !!value.trim(),
+        (value): value is string => typeof value === "string" && !!value.trim(),
       )
       ?.trim();
     const id = resultText.match(/Task #([^\s:]+)/)?.[1];

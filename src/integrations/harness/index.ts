@@ -48,6 +48,8 @@ export {
 export {
   sendClaudeTurn,
   compactClaudeContext,
+  claudeMcpStatus,
+  reconnectClaudeMcpServer,
   cancelClaudeTurn,
   respondClaudeApproval,
   stopClaudeSession,

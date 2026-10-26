@@ -190,6 +190,8 @@ import {
 } from "../model/sessionFolders";
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
+import { CHROME_COMMAND, isChromeCommand } from "../model/chromeCommand";
+import { ChromePanel } from "./ChromePanel";
 import {
   mcpContextText,
   mcpTagParts,
@@ -521,6 +523,7 @@ export function Composer({
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
   const [sessionFolderSelected, setSessionFolderSelected] = useState(false);
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [chromeOpen, setChromeOpen] = useState(false);
   const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
   const [mcpStatus, setMcpStatus] = useState<Map<string, string>>(new Map());
   const [mcpLoading, setMcpLoading] = useState(false);
@@ -590,6 +593,9 @@ export function Composer({
     pickerOpen: pickerOpen && !remote,
   });
   const skills = skillCatalog.skills;
+  // The CLI's `/chrome` only exists in its terminal UI; MonoCode answers it
+  // for a local Claude session from the session's running process.
+  const chromeCommand = harness === "claude" && !remote && !!sessionId;
   const slashItems = useMemo(
     () =>
       remote
@@ -597,6 +603,7 @@ export function Composer({
         : [
             SESSION_FOLDER_COMMAND,
             MCP_COMMAND,
+            ...(chromeCommand ? [CHROME_COMMAND] : []),
             OPERATOR_COMMAND,
             ...(hideTopBar ? [] : [ORCHESTRATOR_COMMAND]),
             PLAN_COMMAND,
@@ -613,6 +620,7 @@ export function Composer({
                     skill.name !== COMPACT_COMMAND.name &&
                     skill.name !== SESSION_FOLDER_COMMAND.name &&
                     skill.name !== MCP_COMMAND.name &&
+                    !(chromeCommand && skill.name === CHROME_COMMAND.name) &&
                     skill.name !== ORCHESTRATOR_COMMAND.name &&
                     skill.name !== DRAFT_COMMAND.name &&
                     skill.name !== BTW_COMMAND.name)),
@@ -626,6 +634,7 @@ export function Composer({
       hideTopBar,
       canSaveDraft,
       onSaveDraft,
+      chromeCommand,
     ],
   );
   const skillLimit = hasNativeCommands(harness)
@@ -1131,6 +1140,17 @@ export function Composer({
         openMcpPicker();
         return;
       }
+      if (skill.kind === "builtin" && skill.name === CHROME_COMMAND.name) {
+        const next = `${el.value.slice(0, token.start)}${el.value.slice(token.end).replace(/^\s/, "")}`;
+        el.value = next;
+        resizeComposer(el);
+        setDraft(next);
+        onDraftChange?.(next);
+        syncHasValue(next, attachmentsRef.current);
+        setSlash(null);
+        setChromeOpen(true);
+        return;
+      }
       const sessionFolderCommand =
         skill.kind === "builtin" &&
         skill.name === SESSION_FOLDER_COMMAND.name &&
@@ -1393,6 +1413,18 @@ export function Composer({
       openMcpPicker();
       return;
     }
+    if (chromeCommand && isChromeCommand(value)) {
+      if (ref.current) {
+        ref.current.value = "";
+        ref.current.style.height = "auto";
+      }
+      setDraft("");
+      onDraftChange?.("");
+      setSlash(null);
+      syncHasValue("", attachments);
+      setChromeOpen(true);
+      return;
+    }
     const draftCommand = canSaveDraft
       ? consumeDraftCommand(value)
       : { text: value, matched: false };
@@ -1634,6 +1666,7 @@ export function Composer({
       !e.shiftKey &&
       (isCompactCommand(e.currentTarget.value) ||
         isMcpCommand(e.currentTarget.value) ||
+        (chromeCommand && isChromeCommand(e.currentTarget.value)) ||
         isSessionFolderCommand(e.currentTarget.value))
     ) {
       e.preventDefault();
@@ -1957,6 +1990,15 @@ export function Composer({
         onSteer={onSteerQueuedMessage}
         onResume={onResumeQueue}
       />
+      {chromeOpen && sessionId ? (
+        <ChromePanel
+          sessionId={sessionId}
+          onClose={() => {
+            setChromeOpen(false);
+            ref.current?.focus();
+          }}
+        />
+      ) : null}
       <div className="relative overflow-visible">
         {mcpPickerOpen ? (
           <div className="absolute inset-x-0 bottom-full z-30 mb-1">
@@ -2128,9 +2170,7 @@ export function Composer({
               ? "edit-last-turn-composer rounded-lg"
               : "rounded-lg border-content/10 has-focus:border-content/20"
           } ${
-            bashMode
-              ? "border-pink-500/50 has-focus:border-pink-500/60"
-              : ""
+            bashMode ? "border-pink-500/50 has-focus:border-pink-500/60" : ""
           } ${
             fileDrag
               ? "border-accent/60"
