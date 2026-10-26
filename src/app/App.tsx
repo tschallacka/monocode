@@ -2356,8 +2356,8 @@ function Workspace({
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  // Sessions that belong in the UI: an ephemeral, hidden run is not one of
-  // them.
+  // Sessions that belong in the UI: a habit's hidden run is not one of them,
+  // and asks through its Mono's chat rather than on its own.
   const promptableSessions = useMemo(
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
@@ -2551,6 +2551,15 @@ function Workspace({
         // Listening here makes close our job. Letting the default path run
         // calls JS `window.destroy`, which Tauri denies without a permission.
         event.preventDefault();
+        if (
+          IS_MAC &&
+          (await invoke<boolean>("mono_chat_keep_alive").catch(() => false))
+        ) {
+          flushHarnessEvents();
+          void persistLiveTranscripts(sessionsRef.current);
+          void hideCurrentWindow();
+          return;
+        }
         const toTray = loadCloseToTray();
         if (hasInFlightSessions(sessionsRef.current)) {
           flushHarnessEvents();
@@ -5095,10 +5104,6 @@ function Workspace({
   /** A Mono's conversation is a view over the existing workspace tabs. */
   const onOpenMono = useCallback(
     async (monoId: string, options?: { thread?: string; chat?: boolean }) => {
-      // Only Claude Projects open here. A standalone Mono left in the roster
-      // from before they were removed (reached from search, an approval or
-      // the inbox) would open as a broken project.
-      if (!isCoordinatorProject(findMono(monoId))) return;
       setMonoActivity(null);
       workspaceNavigation.cancel();
       const request = ++monoViewRequest.current;
@@ -12133,7 +12138,7 @@ function Workspace({
     () =>
       historyWithLiveSessions(
         history,
-        // An ephemeral, hidden run is never one of the project's chats.
+        // A habit's hidden run is never one of the project's chats.
         promptableSessions,
         sidebarCwd,
         {

@@ -63,7 +63,7 @@ async function loadMonoSession(
   return session;
 }
 
-/** Reset only the coordinator's chat, keeping its identity and memory. */
+/** Reset only the Mono's chat, keeping its identity, habits and memory. */
 export async function resetMonoSession(
   current: Session,
   host: {

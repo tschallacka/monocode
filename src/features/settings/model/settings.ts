@@ -214,12 +214,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
           label: "Quick composer",
           keywords: "spotlight global shortcut hotkey floating prompt anywhere",
         },
-        {
-          id: "mono-menu-bar-icon",
-          section: "general" as const,
-          label: "Menu bar icon",
-          keywords: "tray status quick composer macos",
-        },
       ]
     : []),
   {
@@ -1159,8 +1153,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
     when: "Always",
   },
   { command: "App: Switch Model", keys: `${MOD}.`, when: "Always" },
-  // The command keeps its id so saved shortcut overrides still apply.
-  { command: "App: Toggle Mono", keys: `${MOD}I`, when: "Claude Project" },
+  { command: "App: Toggle Mono", keys: `${MOD}I`, when: "Project with a mono" },
   {
     command: "Composer: Toggle Workspace",
     keys: `${MOD}${SHIFT}G`,

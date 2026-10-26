@@ -223,7 +223,7 @@ function readHanded(): Record<string, Handed> {
 }
 
 /**
- * Bump when the standing context changes (identity or memory rules),
+ * Bump when the standing context changes (identity, memory or habit rules),
  * so sessions already running are handed the new version once.
  */
 const CONTEXT_VERSION = 9;
