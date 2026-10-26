@@ -6,6 +6,23 @@ import { withClaudeTranscript } from "../../../integrations/harness/providers/cl
 import { readSession, upsertSession } from "../data/sessionStore";
 import { newSession, type Session } from "./session";
 
+/**
+ * Opens the Claude Code session picker. With a `cwd` it lists that project's
+ * sessions; without one it lists every session, and picking one also adds
+ * its folder as a project.
+ */
+export const OPEN_CLAUDE_CODE_SESSION_EVENT = "monocode:open-claude-code-session";
+
+export type OpenClaudeCodeSessionDetail = { cwd?: string };
+
+export function openClaudeCodeSessionPicker(cwd?: string) {
+  window.dispatchEvent(
+    new CustomEvent<OpenClaudeCodeSessionDetail>(OPEN_CLAUDE_CODE_SESSION_EVENT, {
+      detail: { cwd },
+    }),
+  );
+}
+
 /** A transcript written this recently may still be running in a terminal. */
 export const CLAUDE_CODE_LIVE_MS = 60_000;
 

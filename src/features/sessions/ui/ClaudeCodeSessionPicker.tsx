@@ -4,6 +4,7 @@ import {
   type ClaudeCodeSession,
 } from "../../../platform/tauri/claudeCodeSessions";
 import { homeDir } from "../../../platform/tauri/fs";
+import { pathKey } from "../../../shared/lib/paths";
 import { isLikelyLive } from "../model/claudeCodeImport";
 
 function shortPath(path: string, home: string | null): string {
@@ -35,11 +36,26 @@ export function filterClaudeCodeSessions(
   });
 }
 
+/** Sessions that ran in `folder` or a folder below it. */
+export function claudeCodeSessionsIn(
+  sessions: readonly ClaudeCodeSession[],
+  folder: string,
+): ClaudeCodeSession[] {
+  const key = pathKey(folder);
+  return sessions.filter((session) => {
+    const cwd = pathKey(session.cwd);
+    return cwd === key || cwd.startsWith(`${key}/`);
+  });
+}
+
 /** Picks a Claude Code CLI session to continue in MonoCode. */
 export function ClaudeCodeSessionPicker({
+  cwd,
   onPick,
   onClose,
 }: {
+  /** Lists only the sessions run in this project folder. */
+  cwd?: string;
   /** Imports and opens the session; the picker waits on it. */
   onPick: (session: ClaudeCodeSession) => Promise<void>;
   onClose: () => void;
@@ -56,7 +72,10 @@ export function ClaudeCodeSessionPicker({
   useEffect(() => {
     let cancelled = false;
     listClaudeCodeSessions()
-      .then((found) => !cancelled && setSessions(found))
+      .then(
+        (found) =>
+          !cancelled && setSessions(cwd ? claudeCodeSessionsIn(found, cwd) : found),
+      )
       .catch((reason: unknown) => !cancelled && setError(String(reason)));
     homeDir()
       .then((dir) => !cancelled && setHome(dir))
@@ -64,7 +83,7 @@ export function ClaudeCodeSessionPicker({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cwd]);
 
   const pick = (session: ClaudeCodeSession) => {
     if (opening) return;
@@ -117,7 +136,11 @@ export function ClaudeCodeSessionPicker({
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={onKeyDown}
-          placeholder="Search Claude Code sessions by title, folder or branch"
+          placeholder={
+            cwd
+              ? `Search Claude Code sessions in ${shortPath(cwd, home)}`
+              : "Search Claude Code sessions by title, folder or branch"
+          }
           aria-label="Search Claude Code sessions"
           className="h-11 shrink-0 border-b border-stroke bg-transparent px-4 text-sm text-content outline-none placeholder:text-content/40"
         />
@@ -134,9 +157,11 @@ export function ClaudeCodeSessionPicker({
             </p>
           ) : shown.length === 0 ? (
             <p className="px-2 py-3 text-[13px] text-content/50">
-              {sessions.length === 0
-                ? "No Claude Code sessions found."
-                : "No session matches."}
+              {sessions.length > 0
+                ? "No session matches."
+                : cwd
+                  ? "No Claude Code sessions ran in this project."
+                  : "No Claude Code sessions found."}
             </p>
           ) : (
             shown.map((session, index) => {
