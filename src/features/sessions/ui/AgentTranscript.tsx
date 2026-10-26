@@ -327,8 +327,6 @@ type Props = {
   subagentAccess?: SubagentAccess;
 };
 
-const NO_SUBAGENT_ACCESS: SubagentAccess = {};
-
 function AgentTranscriptComponent({
   blocks: sourceBlocks,
   historicalBlockIds,
@@ -1936,11 +1934,14 @@ export const AgentTranscript = memo(
         <TranscriptPacing.Provider value={!props.bottomAligned}>
           <ToolDetailSession.Provider value={props.sessionId}>
             <MarkdownLinkContext.Provider value={props.renderLink}>
-              <SubagentAccessContext.Provider
-                value={props.subagentAccess ?? NO_SUBAGENT_ACCESS}
-              >
+              {/* Only when given, so an outer provider still reaches it. */}
+              {props.subagentAccess ? (
+                <SubagentAccessContext.Provider value={props.subagentAccess}>
+                  <AgentTranscriptComponent {...props} />
+                </SubagentAccessContext.Provider>
+              ) : (
                 <AgentTranscriptComponent {...props} />
-              </SubagentAccessContext.Provider>
+              )}
             </MarkdownLinkContext.Provider>
           </ToolDetailSession.Provider>
         </TranscriptPacing.Provider>
