@@ -1204,7 +1204,7 @@ function ChatPage() {
         <Row
           id="fold-work"
           label="Fold finished work"
-          description="Collapse a turn's steps once the agent answers, and each group of steps once the next starts. Turn this off to keep the work open, with every step opening to its full command and output."
+          description="Collapse a turn's steps once the agent answers, and each group of steps once the next starts. Turn this off to keep the work open."
         >
           <Toggle
             label="Fold finished work"
