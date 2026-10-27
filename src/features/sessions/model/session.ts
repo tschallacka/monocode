@@ -14,6 +14,7 @@ import {
   resolveModel,
 } from "./models";
 import { loadProjectProviderSettings } from "./projectProviders";
+import { loadDefaultRuntimeMode } from "./defaultRuntimeMode";
 
 export type HarnessId =
   | "claude"
@@ -628,10 +629,13 @@ export function newSession(
   };
 }
 
-/** New conversation using the Providers defaults. */
+/**
+ * New conversation using the Providers defaults, in the permission mode
+ * Settings sets for new sessions unless the caller carries one over.
+ */
 export function newDefaultSession(
   cwd = "~",
-  runtimeMode: RuntimeMode = DEFAULT_RUNTIME_MODE,
+  runtimeMode: RuntimeMode = loadDefaultRuntimeMode(),
 ): Session {
   const choice = defaultSessionChoice(cwd);
   return newSession(choice.harness, cwd, choice.model, runtimeMode);
