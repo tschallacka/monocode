@@ -59,6 +59,7 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { DocumentImage, ImageAltText } from "./DocumentImage";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
+import { useResolvedReference } from "./fileReferences";
 import {
   rehypeHoldImageSources,
   rehypeRestoreImageSources,
@@ -359,14 +360,33 @@ function MarkdownCode({
 }: MarkdownCodeProps) {
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
+  const inlineText = block ? "" : textContent(children);
+  const inlineFile = block ? undefined : inlineFileName(inlineText);
+  // A relative name is resolved the way an IDE links it: in the worktree the
+  // session worked in, else its repo. One that resolves nowhere is not a link.
+  const lookup = useResolvedReference(
+    inlineFile && isRelativeReference(inlineText) ? inlineText : undefined,
+  );
   if (!block) {
-    const text = textContent(children);
-    const fileName = inlineFileName(text);
+    const text = inlineText;
+    const fileName = inlineFile;
     const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
     const localMedia = useContext(LocalMediaContext);
-    const file = fileName
+    const reference = fileName
       ? resolveWorkspaceFileReference(text, cwd)
       : undefined;
+    const file =
+      lookup?.status === "missing"
+        ? undefined
+        : lookup?.status === "found" && reference
+          ? { ...reference, path: lookup.file.path }
+          : reference;
+    const title =
+      lookup?.status === "found"
+        ? lookup.file.matches > 1
+          ? `${lookup.file.path}\n${lookup.file.matches - 1} more ${lookup.file.matches === 2 ? "file has" : "files have"} this name`
+          : lookup.file.path
+        : undefined;
     const open =
       file && onOpenFile
         ? () => onOpenFile(file.path, file.navigation)
@@ -374,6 +394,7 @@ function MarkdownCode({
     const chip = (
       <code
         {...props}
+        title={title ?? props.title}
         dir="ltr"
         className={`inline-flex items-center gap-1 rounded-md bg-content/8 px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-content ${
           open ? "cursor-pointer hover:text-sky-300 hover:underline" : ""
@@ -1196,6 +1217,11 @@ function languageFromFileName(fileName: string): string {
 function fileNameForLanguage(language: string): string {
   const key = language.toLowerCase();
   return LANGUAGE_FILE_NAMES[key] ?? `code.${key}`;
+}
+
+/** A reference named from a project root rather than an absolute path or URL. */
+function isRelativeReference(value: string): boolean {
+  return !/^(?:~|\/|[a-z]:[\\/]|[a-z][a-z0-9+.-]*:)/i.test(value.trim());
 }
 
 function inlineFileName(value: string): string | undefined {
