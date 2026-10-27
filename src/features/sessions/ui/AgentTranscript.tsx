@@ -1327,7 +1327,11 @@ function AgentTranscriptComponent({
                 ))}
               </div>
             );
-            const fold = inlineWork ? undefined : foldableWork(items);
+            // Work folds under the turn's line only once the turn is done. While
+            // it runs, a finished group closes in place to its own header, so
+            // what the agent did stays where it was and opens with one click.
+            const fold =
+              inlineWork || !settled ? undefined : foldableWork(items);
             const folded = fold ? foldedBlocks(items, fold) : [];
             const summarizedWork = inlineWork
               ? items.flatMap((item) =>
@@ -3192,6 +3196,14 @@ function WorkFoldLine({
   open: boolean;
   onToggle: () => void;
 }) {
+  // A finished turn's folded work shows its chevron outright: a line that only
+  // reveals it can open under the cursor reads as if the work were gone.
+  const showChevron = expandable && !live;
+  const iconHide = expandable
+    ? showChevron
+      ? "opacity-0"
+      : "group-hover:opacity-0"
+    : "";
   const icon = (
     <span className="relative flex size-3.5 shrink-0 items-center justify-center">
       {open ? (
@@ -3208,22 +3220,21 @@ function WorkFoldLine({
               name={agentMascot.mascot}
               color={agentMascot.color}
               still
-              className={`size-3.5 shrink-0 ${expandable ? "group-hover:opacity-0" : ""}`}
+              className={`size-3.5 shrink-0 ${iconHide}`}
             />
           ) : harness ? (
             <HarnessIcon
               harness={harness}
-              className={`size-3.5 shrink-0 ${expandable ? "group-hover:opacity-0" : ""}`}
+              className={`size-3.5 shrink-0 ${iconHide}`}
             />
           ) : (
-            <ActivityPhaseIcon
-              kind={kind}
-              className={expandable ? "group-hover:opacity-0" : ""}
-            />
+            <ActivityPhaseIcon kind={kind} className={iconHide} />
           )}
           {expandable ? (
             <ChevronRight
-              className="absolute size-3.5 text-content/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+              className={`absolute size-3.5 text-content/45 transition-opacity duration-200 ${
+                showChevron ? "" : "opacity-0 group-hover:opacity-100"
+              }`}
               strokeWidth={1.75}
             />
           ) : null}
