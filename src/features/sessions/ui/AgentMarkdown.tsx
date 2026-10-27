@@ -363,6 +363,7 @@ function MarkdownCode({
     const text = textContent(children);
     const fileName = inlineFileName(text);
     const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+    const localMedia = useContext(LocalMediaContext);
     const file = fileName
       ? resolveWorkspaceFileReference(text, cwd)
       : undefined;
@@ -370,7 +371,7 @@ function MarkdownCode({
       file && onOpenFile
         ? () => onOpenFile(file.path, file.navigation)
         : undefined;
-    return (
+    const chip = (
       <code
         {...props}
         dir="ltr"
@@ -404,6 +405,22 @@ function MarkdownCode({
         {children}
       </code>
     );
+    // An image the reply names in code shows right there, under its path; a
+    // file that cannot be shown leaves just the path.
+    if (localMedia && file && isLocalMediaPath(file.path)) {
+      return (
+        <>
+          {chip}
+          <LocalMedia
+            path={file.path}
+            label={fileName ?? text}
+            onOpen={open}
+            fallback={null}
+          />
+        </>
+      );
+    }
+    return chip;
   }
 
   const meta = codeMeta(node);
