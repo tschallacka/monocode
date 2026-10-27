@@ -498,6 +498,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "pretooluse settings.json block command notification",
   },
   {
+    id: "default-runtime-mode",
+    section: "providers",
+    label: "Permission mode",
+    keywords:
+      "new conversation session default auto supervised full access accept edits approvals permissions ask prompts",
+  },
+  {
     id: "idle-agents",
     section: "providers",
     label: "Keep idle agents ready",

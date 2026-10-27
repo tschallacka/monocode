@@ -23,9 +23,12 @@ const MEDIA_HINT = new RegExp(`\\.${IMAGE_EXT}`, "i");
 
 // Code fences hold source and command lines, where an image path is usually
 // an import or an argument rather than something the agent is showing.
-const FENCE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm;
+const FENCE =
+  /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm;
 // `[label](<path with spaces.png>)` keeps its spaces inside angle brackets.
 const ANGLE_TARGET = /\]\(\s*<([^>\n]+)>/g;
+// `[label](path.png)` and `![alt](path.png)`: a target the markdown renders.
+const LINK_TARGET = /\]\(\s*([^)\s<>]+)[^)\n]*\)/g;
 const INLINE_CODE = /`([^`\n]+)`/g;
 const IMAGE_SUFFIX = new RegExp(`\\.${IMAGE_EXT}(?::\\d+(?::\\d+)?)?$`, "i");
 // A path-ish run of characters that ends in an image extension. URLs match
@@ -59,17 +62,26 @@ export function transcriptMedia(path: string): TranscriptImage {
  *
  * Covers markdown images and links, inline code, and bare paths. Remote
  * sessions are skipped: their files cannot be revealed or saved from here.
+ * With `bareOnly`, only paths written as plain text are kept: a chat that
+ * shows media inline already shows the ones in code and links where they are.
  */
-export function imageReferences(text: string, cwd?: string): string[] {
+export function imageReferences(
+  text: string,
+  cwd?: string,
+  { bareOnly = false }: { bareOnly?: boolean } = {},
+): string[] {
   if (!text || !MEDIA_HINT.test(text)) return [];
   let body = text.replace(FENCE, (match) => " ".repeat(match.length));
   const hits: Hit[] = [];
 
-  for (const pattern of [ANGLE_TARGET, INLINE_CODE]) {
+  const marked = bareOnly
+    ? [ANGLE_TARGET, LINK_TARGET, INLINE_CODE]
+    : [ANGLE_TARGET, INLINE_CODE];
+  for (const pattern of marked) {
     for (const match of [...body.matchAll(pattern)]) {
       const raw = match[1].trim();
       if (!IMAGE_SUFFIX.test(raw)) continue;
-      hits.push({ index: match.index, raw });
+      if (!bareOnly) hits.push({ index: match.index, raw });
       body = blank(body, match.index, match[0].length);
     }
   }
@@ -99,6 +111,24 @@ export function blockImageReferences(block: Block, cwd?: string): string[] {
   if (cached && cached.cwd === cwd) return cached.paths;
   const paths = imageReferences(block.text, cwd);
   referenceCache.set(block, { cwd, paths });
+  return paths;
+}
+
+const bareReferenceCache = new WeakMap<
+  Block,
+  { cwd?: string; paths: string[] }
+>();
+
+/**
+ * The media a reply names in plain text only, for the strip under a reply
+ * whose code and links already show theirs inline.
+ */
+export function blockBareImageReferences(block: Block, cwd?: string): string[] {
+  if (block.role !== "assistant" || block.streaming) return [];
+  const cached = bareReferenceCache.get(block);
+  if (cached && cached.cwd === cwd) return cached.paths;
+  const paths = imageReferences(block.text, cwd, { bareOnly: true });
+  bareReferenceCache.set(block, { cwd, paths });
   return paths;
 }
 

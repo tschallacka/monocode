@@ -89,7 +89,7 @@ const foldWork = flagStore(
 );
 /**
  * A turn's work folds once the agent answers, and each phase closes when the
- * next starts. Off, the trail stays open and every step opens to its output.
+ * next starts. Off, the trail stays open.
  */
 export const loadFoldWork = foldWork.load;
 export const saveFoldWork = foldWork.save;

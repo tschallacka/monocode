@@ -200,6 +200,78 @@ describe("Mono transcript pages", () => {
 });
 
 describe("subagent scrolling", () => {
+  it("keeps following when a redraw drops the window back to the top", () => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Investigate auth" },
+      {
+        id: "spawn",
+        role: "tool",
+        text: "Auth review",
+        tool: { callId: "spawn", kind: "agent", status: "in_progress" },
+        agentRun: {
+          name: "Auth review",
+          steps: Array.from({ length: 9 }, (_, index) => ({
+            id: `step-${index}`,
+            kind: "tool" as const,
+            text: `Read file-${index}.ts`,
+            toolKind: "read",
+            status: "completed",
+          })),
+        },
+      },
+    ];
+    act(() =>
+      root.render(createElement(AgentTranscript, { blocks, busy: true })),
+    );
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Show Auth review\'s work"]',
+        )!
+        .click(),
+    );
+    const scroller =
+      container.querySelector<HTMLDivElement>(".zen-phase-live")!;
+    let height = 600;
+    let top = 0;
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height },
+      clientHeight: { get: () => 280 },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(value, height - 280));
+        },
+      },
+    });
+    const observer = observers.find((item) =>
+      item.targets.includes(scroller.firstElementChild!),
+    )!;
+    act(() => observer.resize());
+    expect(top).toBe(320);
+
+    // WebKit loses a nested scroller's offset on a redraw: nobody scrolled.
+    act(() => {
+      top = 0;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    expect(top).toBe(320);
+    height = 700;
+    act(() => observer.resize());
+    expect(top).toBe(420);
+
+    // The reader dragging the scrollbar to the very top is a real choice.
+    act(() => {
+      scroller.dispatchEvent(new Event("pointerdown"));
+      top = 0;
+      scroller.dispatchEvent(new Event("scroll"));
+      window.dispatchEvent(new Event("pointerup"));
+    });
+    height = 760;
+    act(() => observer.resize());
+    expect(top).toBe(0);
+  });
+
   it("follows growing content to the bottom with only one live scroll window", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Investigate auth" },

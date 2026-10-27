@@ -56,4 +56,38 @@ describe("Fold finished work setting", () => {
       'aria-label="Show output of rm -f build.log &amp;&amp; git status --short"',
     );
   });
+
+  it("opens every step, finished or running, whatever the setting", () => {
+    const lone = (tool: Block) =>
+      renderToStaticMarkup(
+        createElement(AgentTranscript, {
+          blocks: [{ id: "user", role: "user", text: "Check the rates" }, tool],
+          busy: false,
+        }),
+      );
+    expect(
+      lone({
+        id: "pull",
+        role: "tool",
+        text: "cd ~/www/dugros && git pull --ff-only",
+        tool: {
+          kind: "shell",
+          status: "completed",
+          detail: "Already up to date.",
+        },
+      }),
+    ).toContain(
+      'aria-label="Show output of cd ~/www/dugros &amp;&amp; git pull --ff-only"',
+    );
+    expect(
+      lone({
+        id: "query",
+        role: "tool",
+        text: 'n98-magerun2 db:query "SELECT 1"',
+        tool: { kind: "shell", status: "in_progress" },
+      }),
+    ).toContain(
+      'aria-label="Show output of n98-magerun2 db:query &quot;SELECT 1&quot;"',
+    );
+  });
 });
