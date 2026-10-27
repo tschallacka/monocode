@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { setProjectDefaultProvider } from "../../features/sessions/model/projectProviders";
 import { newSession } from "../../features/sessions/model/session";
+import { saveDefaultRuntimeMode } from "../../features/sessions/model/defaultRuntimeMode";
 import { setWorktreeFocus } from "../../features/source-control/model/worktreeFocus";
 import { newWorkspaceSession } from "./newWorkspaceSession";
 
@@ -41,6 +42,24 @@ it("starts in the project root without session defaults or a separate worktree",
   const session = newWorkspaceSession("/current");
 
   expect(session.cwd).toBe("/current");
-  expect(session.runtimeMode).toBe("supervised");
+  expect(session.runtimeMode).toBe("auto");
   expect(session.worktreeCwd).toBeUndefined();
+});
+
+it("starts a new session in the permission mode Settings chose", () => {
+  saveDefaultRuntimeMode("supervised");
+  expect(newWorkspaceSession("/current").runtimeMode).toBe("supervised");
+
+  saveDefaultRuntimeMode("full-access");
+  expect(newWorkspaceSession("/current").runtimeMode).toBe("full-access");
+
+  // A mode carried over from the session it was opened from still wins.
+  expect(newWorkspaceSession("/current", "auto-accept-edits").runtimeMode).toBe(
+    "auto-accept-edits",
+  );
+});
+
+it("ignores a saved mode it does not know", () => {
+  localStorage.setItem("monocode.defaultRuntimeMode", "yolo");
+  expect(newWorkspaceSession("/current").runtimeMode).toBe("auto");
 });

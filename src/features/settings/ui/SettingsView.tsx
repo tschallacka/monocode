@@ -235,9 +235,16 @@ import {
 import {
   HARNESSES,
   HARNESS_TITLE,
+  RUNTIME_MODES,
+  RUNTIME_MODE_LABEL,
   sessionDisplayTitle,
   type HarnessId,
+  type RuntimeMode,
 } from "../../sessions/model/session";
+import {
+  saveDefaultRuntimeMode,
+  useDefaultRuntimeMode,
+} from "../../sessions/model/defaultRuntimeMode";
 import {
   loadProjectProviderSettings,
   projectProvidersRevision,
@@ -3557,6 +3564,7 @@ function ProvidersPage({
     setClaudeAutoCompactWindow(window);
   };
 
+  const defaultRuntimeMode = useDefaultRuntimeMode();
   const onIdleAgentLimit = (next: string) => {
     const limit = Number(next) as IdleAgentLimit;
     saveIdleAgentLimit(limit);
@@ -3663,6 +3671,24 @@ function ProvidersPage({
             />
           );
         })}
+      </Group>
+
+      <Group title="New conversations">
+        <Row
+          id="default-runtime-mode"
+          label="Permission mode"
+          description="The permission mode a new conversation starts in, unless it takes one over from the conversation it was opened from. Auto lets an AI reviewer approve routine actions instead of asking about each one. Existing conversations keep their own mode."
+        >
+          <Select
+            label="Permission mode for new conversations"
+            value={defaultRuntimeMode}
+            options={RUNTIME_MODES.map((mode) => ({
+              value: mode,
+              label: RUNTIME_MODE_LABEL[mode],
+            }))}
+            onChange={(mode) => saveDefaultRuntimeMode(mode as RuntimeMode)}
+          />
+        </Row>
       </Group>
 
       <Group title="Advanced">
