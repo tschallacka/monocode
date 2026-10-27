@@ -3435,27 +3435,48 @@ function useLivePhaseScroll(
   const stickToBottom = useRef(true);
   const lastScrollTop = useRef(0);
   const wasEnabled = useRef(false);
+  const trackedEl = useRef<HTMLDivElement | null>(null);
+  const lastGesture = useRef(-Infinity);
+  const pointerHeld = useRef(false);
+
+  // A redraw can drop the window's offset back to the top with nobody
+  // scrolling. That is not the reader leaving the newest step, so it must not
+  // stop following; only the reader's own gesture can take it to the top.
+  const lostOffset = useCallback(
+    () =>
+      !!el &&
+      el.scrollTop === 0 &&
+      lastScrollTop.current > 0 &&
+      !pointerHeld.current &&
+      performance.now() - lastGesture.current > READER_GESTURE_MS,
+    [el],
+  );
 
   const pin = useCallback(() => {
     if (!el) return;
-    stickToBottom.current = followsAfterScroll(
-      el,
-      lastScrollTop.current,
-      stickToBottom.current,
-    );
+    if (!lostOffset()) {
+      stickToBottom.current = followsAfterScroll(
+        el,
+        lastScrollTop.current,
+        stickToBottom.current,
+      );
+    }
     if (stickToBottom.current) el.scrollTop = el.scrollHeight;
     lastScrollTop.current = el.scrollTop;
     markScrollEdges(el);
-  }, [el]);
+  }, [el, lostOffset]);
 
   useLayoutEffect(() => {
     if (!enabled) {
       wasEnabled.current = false;
       return;
     }
-    if (!wasEnabled.current) {
+    // A window mounted again starts at the top of its own; it follows anew
+    // rather than reading the jump from the old one's offset as a scroll.
+    if (!wasEnabled.current || trackedEl.current !== el) {
       stickToBottom.current = true;
       lastScrollTop.current = el?.scrollTop ?? 0;
+      trackedEl.current = el;
       wasEnabled.current = true;
     }
     pin();
@@ -3465,6 +3486,10 @@ function useLivePhaseScroll(
     if (!el || !enabled) return;
 
     const onScroll = () => {
+      if (lostOffset()) {
+        pin();
+        return;
+      }
       stickToBottom.current = followsAfterScroll(
         el,
         lastScrollTop.current,
@@ -3473,7 +3498,18 @@ function useLivePhaseScroll(
       lastScrollTop.current = el.scrollTop;
       markScrollEdges(el);
     };
+    const noteGesture = () => {
+      lastGesture.current = performance.now();
+    };
+    const onPointerDown = () => {
+      pointerHeld.current = true;
+      noteGesture();
+    };
+    const onPointerUp = () => {
+      pointerHeld.current = false;
+    };
     const onWheel = (e: WheelEvent) => {
+      noteGesture();
       if (!nestedScrollAbsorbsWheel(el, e.deltaY)) return;
       if (e.deltaY < 0) stickToBottom.current = false;
       e.stopPropagation();
@@ -3481,6 +3517,11 @@ function useLivePhaseScroll(
 
     el.addEventListener("scroll", onScroll, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("keydown", noteGesture);
+    el.addEventListener("touchmove", noteGesture, { passive: true });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     const inner = el.firstElementChild;
     const observer = new ResizeObserver(pin);
     if (inner) observer.observe(inner);
@@ -3488,10 +3529,18 @@ function useLivePhaseScroll(
     return () => {
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("keydown", noteGesture);
+      el.removeEventListener("touchmove", noteGesture);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       observer.disconnect();
     };
-  }, [el, enabled, pin]);
+  }, [el, enabled, pin, lostOffset]);
 }
+
+/** How long after a wheel, key or touch a jump to the top is the reader's. */
+const READER_GESTURE_MS = 1_000;
 
 /** Flags the edges with more to scroll to, so only those fade. */
 function markScrollEdges(el: HTMLElement) {
