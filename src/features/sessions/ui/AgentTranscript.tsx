@@ -4873,8 +4873,6 @@ function ActivityToolRow({
 }) {
   const [errorOpen, setErrorOpen] = useState(false);
   const output = useToolDetail(block, errorOpen);
-  // With folding off a finished step opens to its whole call and output.
-  const readable = !useFoldWork();
   const appCall = monoCodeToolCall(block);
   if (appCall) {
     return (
@@ -4890,8 +4888,10 @@ function ActivityToolRow({
         ? (output.detail?.trim() ?? LOADING_OUTPUT)
         : output.detail?.trim()
       : undefined;
+  // Every step opens to its whole call and the output it has, still running
+  // or done: the row itself shows one line, cut to the pane's width.
   const fullDetail =
-    readable && !pending && state === "accepted"
+    !pending && state !== "rejected"
       ? fullToolDetail(label, output)
       : undefined;
   const summary = (
