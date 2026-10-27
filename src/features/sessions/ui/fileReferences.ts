@@ -7,17 +7,23 @@ import { resolveReference, type ResolvedReference } from "../model/fileRoots";
  * never lists its repo's worktrees. A reply rendered outside a transcript has
  * none and keeps its plain paths.
  */
-export type FileRoots = { get: () => Promise<readonly string[]> };
+export type FileRoots = {
+  get: () => Promise<readonly string[]>;
+  /** Files the session read, edited or wrote, most recent first. */
+  touched?: () => readonly string[];
+};
 
 export const FileRootsContext = createContext<FileRoots | null>(null);
 
 /** Roots computed by `load` once, on first use. */
 export function lazyFileRoots(
   load: () => Promise<readonly string[]>,
+  touched?: () => readonly string[],
 ): FileRoots {
   let roots: Promise<readonly string[]> | undefined;
   return {
     get: () => (roots ??= load()),
+    ...(touched ? { touched } : {}),
   };
 }
 
@@ -44,7 +50,9 @@ function lookup(
   if (!found) {
     found = roots
       .get()
-      .then((list) => resolveReference(reference, list))
+      .then((list) =>
+        resolveReference(reference, list, roots.touched?.() ?? []),
+      )
       .catch(() => null);
     byReference.set(reference, found);
   }

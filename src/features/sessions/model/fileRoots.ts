@@ -81,25 +81,66 @@ export async function sessionFileRoots(
 }
 
 /** A reference found on disk, and how many files carry its name. */
-export type ResolvedReference = { path: string; matches: number };
+export type ResolvedReference = {
+  path: string;
+  matches: number;
+  /** Found as a file the session itself read, edited or wrote. */
+  touched?: boolean;
+};
 
 /** `Total.php:12` and `Total.php#L12` name the same file as `Total.php`. */
 function withoutLocation(reference: string): string {
   return reference.trim().replace(/(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)$/, "");
 }
 
+/** How many trailing folders of a gone file are tried under the roots. */
+const MAX_SUFFIX_SEGMENTS = 8;
+
+/**
+ * Where a file the session touched is now: where it was, or, when that was a
+ * worktree since removed, the same path inside one of the roots (its tail
+ * under the worktree, `app/code/…/X.php`, tried longest first).
+ */
+async function touchedFileNow(
+  touched: string,
+  roots: readonly string[],
+): Promise<string | null> {
+  const candidates = touched.startsWith("/")
+    ? [touched]
+    : roots.map((root) => joinPath(root, touched));
+  const segments = touched.split("/").filter(Boolean);
+  for (
+    let count = Math.min(segments.length - 1, MAX_SUFFIX_SEGMENTS);
+    count >= 1;
+    count--
+  ) {
+    const tail = segments.slice(-count - 1).join("/");
+    for (const root of roots) candidates.push(joinPath(root, tail));
+  }
+  const stats = await statFiles(candidates);
+  return stats.find((stat) => stat.mtimeMs != null)?.path ?? null;
+}
+
 /**
  * The file a relative reference in a reply means, the way an IDE resolves
- * it: a path is tried under each root in turn, and a bare name is looked up
- * in each root's files, the first root that has it winning. Null when no root
- * has it, so the reference is not offered as a link.
+ * it. A file the session itself read, edited or wrote under that name wins,
+ * the most recently touched first: that is the file the reply is about.
+ * Otherwise a path is tried under each root in turn, and a bare name is
+ * looked up in each root's files, the first root that has it winning. Null
+ * when nothing has it, so the reference is not offered as a link.
  */
 export async function resolveReference(
   reference: string,
   roots: readonly string[],
+  touched: readonly string[] = [],
 ): Promise<ResolvedReference | null> {
   const clean = withoutLocation(reference);
   if (!clean) return null;
+  for (const path of touched) {
+    if (path !== clean && !path.endsWith(`/${clean}`)) continue;
+    const now = await touchedFileNow(path, roots);
+    if (now) return { path: now, matches: 1, touched: true };
+  }
   if (clean.includes("/")) {
     const candidates = roots.map((root) => joinPath(root, clean));
     const stats = await statFiles(candidates);

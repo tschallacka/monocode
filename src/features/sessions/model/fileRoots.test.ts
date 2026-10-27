@@ -94,6 +94,29 @@ describe("resolveReference", () => {
     });
   });
 
+  it("prefers the file of that name the session itself worked on", async () => {
+    files.set(MAIN, [file(MAIN, "a/X.php"), file(MAIN, "deeper/b/X.php")]);
+    onDisk.add(`${MAIN}/deeper/b/X.php`);
+    expect(
+      await resolveReference(
+        "X.php",
+        [MAIN],
+        ["/elsewhere/Y.php", `${MAIN}/deeper/b/X.php`, `${MAIN}/a/X.php`],
+      ),
+    ).toEqual({ path: `${MAIN}/deeper/b/X.php`, matches: 1, touched: true });
+  });
+
+  it("finds a file worked on in a removed worktree in the main repo", async () => {
+    onDisk.add(`${MAIN}/${test}`);
+    expect(
+      await resolveReference(
+        "SubtotalAfterDiscountTest.php",
+        [MAIN],
+        [`${WT}/${test}`],
+      ),
+    ).toEqual({ path: `${MAIN}/${test}`, matches: 1, touched: true });
+  });
+
   it("is not a link when no root has the file", async () => {
     expect(await resolveReference("Missing.php", [WT, MAIN])).toBeNull();
     expect(await resolveReference("src/missing.ts", [WT, MAIN])).toBeNull();
