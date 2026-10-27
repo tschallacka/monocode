@@ -463,13 +463,24 @@ function AgentTranscriptComponent({
   const fileRoots = useMemo(
     () =>
       cwd
-        ? lazyFileRoots(() =>
-            sessionFileRoots(
-              cwd,
-              latestBlocks.current.flatMap((block) =>
-                block.role === "tool" && block.text ? [block.text] : [],
+        ? lazyFileRoots(
+            () =>
+              sessionFileRoots(
+                cwd,
+                latestBlocks.current.flatMap((block) =>
+                  block.role === "tool" && block.text ? [block.text] : [],
+                ),
               ),
-            ),
+            // The files its tools read, edited or wrote, newest first: a
+            // name the reply uses most likely means one of these.
+            () =>
+              latestBlocks.current
+                .flatMap((block) =>
+                  block.role === "tool" && block.tool?.preview?.path
+                    ? [block.tool.preview.path]
+                    : [],
+                )
+                .reverse(),
           )
         : null,
     [cwd, toolCount],

@@ -383,9 +383,11 @@ function MarkdownCode({
           : reference;
     const title =
       lookup?.status === "found"
-        ? lookup.file.matches > 1
-          ? `${lookup.file.path}\n${lookup.file.matches - 1} more ${lookup.file.matches === 2 ? "file has" : "files have"} this name`
-          : lookup.file.path
+        ? lookup.file.touched
+          ? `${lookup.file.path}\nThe file this session worked on`
+          : lookup.file.matches > 1
+            ? `${lookup.file.path}\n${lookup.file.matches - 1} more ${lookup.file.matches === 2 ? "file has" : "files have"} this name`
+            : lookup.file.path
         : undefined;
     const open =
       file && onOpenFile
