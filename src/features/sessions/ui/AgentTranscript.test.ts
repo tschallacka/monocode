@@ -78,8 +78,7 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows MonoCode CLI actions instead of their long shell commands", () => {
-    const command =
-      "/repo/target/debug/MonoCode.app/Contents/MacOS/monocode";
+    const command = "/repo/target/debug/MonoCode.app/Contents/MacOS/monocode";
     const markup = render(
       [
         { id: "user", role: "user", text: "/monocode list my notes" },
@@ -110,7 +109,8 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows the full command before approving a MonoCode CLI call", () => {
-    const command = "monocode app sessions.send --json '{\"prompt\":\"private-marker\"}'";
+    const command =
+      'monocode app sessions.send --json \'{"prompt":"private-marker"}\'';
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks: [
@@ -613,35 +613,39 @@ describe("AgentTranscript collapsed work", () => {
     );
   });
 
-  it("keeps the turn's status line at the top of the turn above a stack", () => {
-    const markup = render(
-      [
-        { id: "user", role: "user", text: "Review this", startedAt: 1_000 },
-        { id: "lead", role: "assistant", text: "I will run two reviews." },
-        tool("t0"),
-        { id: "plan", role: "assistant", text: "Splitting the review in two." },
-        {
-          id: "a1",
-          role: "tool",
-          text: "Independently review the current repository's recent changes for correctness and regressions. Inspect the uncommitted diff.",
-          tool: { callId: "agent-1", kind: "agent", status: "in_progress" },
+  it("keeps a running turn's work where it is and folds it once settled", () => {
+    const turn = (answerDone: boolean): Block[] => [
+      { id: "user", role: "user", text: "Review this", startedAt: 1_000 },
+      { id: "lead", role: "assistant", text: "I will run two reviews." },
+      tool("t0"),
+      { id: "plan", role: "assistant", text: "Splitting the review in two." },
+      {
+        id: "a1",
+        role: "tool",
+        text: "Independently review the current repository's recent changes for correctness and regressions. Inspect the uncommitted diff.",
+        tool: {
+          callId: "agent-1",
+          kind: "agent",
+          status: answerDone ? "completed" : "in_progress",
         },
-        tool("t1"),
-        { id: "answer", role: "assistant", text: "Both reviewers agree." },
-      ],
-      true,
-    );
+      },
+      tool("t1"),
+      { id: "answer", role: "assistant", text: "Both reviewers agree." },
+    ];
 
-    // The line the work folds behind sits above everything it folds, and a
-    // stack of delegated runs no longer pushes it down the turn.
-    const statusAt = markup.indexOf("Show the work");
-    const stackAt = markup.indexOf("Independently review");
-    expect(statusAt).toBeGreaterThan(-1);
-    expect(stackAt).toBeGreaterThan(statusAt);
-    // The work around it is collapsed away, and the stack is still on screen:
-    // it is pinned outside the fold's body, not inside it.
-    expect(markup).not.toContain("hidden-detail-t1");
-    expect(markup).not.toContain("Splitting the review in two.");
+    // While the turn runs nothing is folded behind its status line: what the
+    // agent did stays where it happened, its groups closing in place.
+    const markup = render(turn(false), true);
+    expect(markup).not.toContain("Show the work");
+    expect(markup).toContain("Splitting the review in two.");
+    expect(markup).toContain("Independently review");
+
+    // Once settled the work folds behind a line above it, one click away.
+    const settled = render(turn(true), false);
+    expect(settled).toContain("Show the work");
+    expect(settled).not.toContain("Splitting the review in two.");
+    expect(settled).toContain("Both reviewers agree.");
+
     // A row-length name is capped, and the whole brief stays on the hover.
     expect(markup).toContain(
       "Independently review the current repository&#x27;s recent…",
