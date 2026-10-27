@@ -23,10 +23,21 @@ describe("imageReferences", () => {
     ]);
   });
 
+  it("keeps only plain-text paths when code and links show theirs inline", () => {
+    const text = [
+      "Here is the screenshot: ![home](/tmp/shots/home.png)",
+      "and [icon](public/icon.webp), [shot](<out/My Shot 1.png>).",
+      "Saved `screens/login.jpg` and /Users/me/Desktop/diff.PNG too.",
+    ].join("\n");
+    expect(imageReferences(text, CWD, { bareOnly: true })).toEqual([
+      "/Users/me/Desktop/diff.PNG",
+    ]);
+  });
+
   it("keeps spaces inside angle-bracket link targets", () => {
-    expect(
-      imageReferences("See [shot](<out/My Shot 1.png>).", CWD),
-    ).toEqual(["/work/app/out/My Shot 1.png"]);
+    expect(imageReferences("See [shot](<out/My Shot 1.png>).", CWD)).toEqual([
+      "/work/app/out/My Shot 1.png",
+    ]);
   });
 
   it("ignores web URLs, code fences, and look-alike extensions", () => {
@@ -41,9 +52,9 @@ describe("imageReferences", () => {
   });
 
   it("lists each image once and drops line suffixes", () => {
-    expect(
-      imageReferences("`a/b.gif:3` then a/b.gif again", CWD),
-    ).toEqual(["/work/app/a/b.gif"]);
+    expect(imageReferences("`a/b.gif:3` then a/b.gif again", CWD)).toEqual([
+      "/work/app/a/b.gif",
+    ]);
   });
 
   it("finds videos the webview can play, but not other formats", () => {

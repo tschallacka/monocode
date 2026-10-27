@@ -41,6 +41,7 @@ import {
   TranscriptImagesProvider,
 } from "./TranscriptImages";
 import {
+  blockBareImageReferences,
   blockImageReferences,
   collectTranscriptImages,
 } from "../model/imageReferences";
@@ -1531,7 +1532,7 @@ function AgentTranscriptComponent({
                   }
                   layout={transcriptLayout}
                   bubbleTail={!!agentMascot}
-                  localMedia={isMonoChat}
+                  localMedia
                   compactFollowUp={isCompactFollowUp(item, itemIndex)}
                   stackedOnPrevious={
                     itemIndex === 0
@@ -2604,7 +2605,12 @@ const TranscriptBlock = memo(function TranscriptBlock({
         localMedia={localMedia}
       />
       <ImageReferenceStrip
-        paths={blockImageReferences(block, cwd)}
+        paths={
+          // Media named in code or a link already shows where it is named.
+          localMedia
+            ? blockBareImageReferences(block, cwd)
+            : blockImageReferences(block, cwd)
+        }
         className="pt-2"
       />
     </div>
