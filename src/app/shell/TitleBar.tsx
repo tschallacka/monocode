@@ -168,6 +168,8 @@ type Props = {
   onCloseAll?: (ids: string[]) => void;
   onArchiveTab?: (id: string) => void;
   onDeleteTab?: (id: string) => void;
+  /** Edits the variables of the tab's focused conversation. */
+  onEditTabEnv?: (id: string) => void;
   onReorder: (ids: string[], movedId?: string) => void;
   onPlaceOnPane?: (tabId: string, targetId: string, edge: PaneEdge) => void;
   onPinFile?: (fileId: string) => void;
@@ -804,6 +806,7 @@ function TitleBarComponent({
   onCloseAll,
   onArchiveTab,
   onDeleteTab,
+  onEditTabEnv,
   onReorder,
   onPlaceOnPane,
   onPinFile,
@@ -1002,6 +1005,20 @@ function TitleBarComponent({
               },
             ]
           : []),
+        ...(contextTab.sessionCount > 0 && onEditTabEnv
+          ? [
+              { kind: "sep" as const },
+              {
+                kind: "item" as const,
+                id: "env",
+                label: "Environment variables…",
+                description:
+                  contextTab.sessionCount > 1 && contextTab.title
+                    ? `For ${contextTab.title}`
+                    : undefined,
+              },
+            ]
+          : []),
         ...(contextTab.sessionCount > 0 && (onArchiveTab || onDeleteTab)
           ? [
               { kind: "sep" as const },
@@ -1042,6 +1059,10 @@ function TitleBarComponent({
     setTabMenu(null);
     if (id === "close") {
       onClose(contextTab.id);
+      return;
+    }
+    if (id === "env") {
+      onEditTabEnv?.(contextTab.id);
       return;
     }
     if (id === "archive") {

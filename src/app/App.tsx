@@ -11139,6 +11139,28 @@ function Workspace({
     );
   }, []);
 
+  // A split tab names its focused conversation in the menu, so that one opens.
+  const onEditTitleTabEnv = useCallback(
+    (tabId: string) => {
+      const sessionIds = sessionIdsInTitleTab(tabId);
+      const focusedId = tabsRef.current.find((tab) => tab.id === tabId)
+        ?.focusedId;
+      const sessionId =
+        sessionIds.find((id) => id === focusedId) ?? sessionIds[0];
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (!session) return;
+      if (remoteProjectFor(session.cwd)) {
+        void message(
+          "Environment variables are kept on this machine, so they are not available for a remote project's conversations.",
+          { title: "MonoCode", kind: "info" },
+        );
+        return;
+      }
+      onEditSessionEnv(session.id);
+    },
+    [onEditSessionEnv, sessionIdsInTitleTab],
+  );
+
   // A process reads its environment once, so a running agent is stopped; the
   // next turn starts a new one with these variables and resumes the thread.
   const onSaveSessionEnv = useCallback(
@@ -14705,6 +14727,7 @@ function Workspace({
       onCloseAll={onCloseAllDisplayedTabs}
       onArchiveTab={onArchiveTitleTab}
       onDeleteTab={onDeleteTitleTab}
+      onEditTabEnv={onEditTitleTabEnv}
       onReorder={onReorderDisplayedTabs}
       onPlaceOnPane={onPlaceTabOnPane}
       onPinFile={onPinFile}
