@@ -345,3 +345,40 @@ describe("child bridge", () => {
     release();
   });
 });
+
+describe("session environment", () => {
+  it("starts a session's children with its variables and flags a stale one", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    mocks.invoke.mockResolvedValue(42);
+
+    expect(child.setSessionChildEnv("s1", { TOKEN: "a" })).toBe(false);
+    await child.spawnChild("s1", "agent", [], "/tmp");
+    expect(mocks.invoke).toHaveBeenLastCalledWith(
+      "harness_spawn",
+      expect.objectContaining({ sessionId: "s1", env: { TOKEN: "a" } }),
+    );
+
+    expect(child.setSessionChildEnv("s1", { TOKEN: "a" })).toBe(false);
+    expect(child.setSessionChildEnv("s1", { TOKEN: "b" })).toBe(true);
+    expect(child.setSessionChildEnv("other", {})).toBe(false);
+  });
+
+  it("covers numbered children and sends nothing once the variables are cleared", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    mocks.invoke.mockResolvedValue(42);
+
+    child.setSessionChildEnv("s1", { TOKEN: "a" });
+    await child.spawnChild("s1#0", "agent", [], "/tmp");
+    expect(mocks.invoke).toHaveBeenLastCalledWith(
+      "harness_spawn",
+      expect.objectContaining({ env: { TOKEN: "a" } }),
+    );
+    expect(child.setSessionChildEnv("s1", {})).toBe(true);
+
+    mocks.invoke.mockResolvedValue(43);
+    await child.spawnChild("s1#1", "agent", [], "/tmp");
+    expect(mocks.invoke.mock.lastCall?.[1]).not.toHaveProperty("env");
+  });
+});

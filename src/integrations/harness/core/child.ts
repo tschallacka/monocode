@@ -4,6 +4,10 @@ import {
   runtimeProviderBinaryPath,
   type ConfigurableBinaryProvider,
 } from "../../../features/providers/model/providerBinaryPaths";
+import {
+  sameSessionEnv,
+  type SessionEnv,
+} from "../../../features/sessions/model/sessionEnv";
 
 /** Process I/O is supplied by the desktop or a headless host. Provider
  * protocols never need to know which process owns their children. */
@@ -124,6 +128,10 @@ const sseBuffer = new Map<string, string[]>();
 const ownedChildren = new Set<string>();
 const ownedSse = new Set<string>();
 const livePid = new Map<string, number>();
+// What each session's next child is started with, and what each live child
+// was started with. A child key is the session id, or `<session id>#<n>`.
+const sessionEnvs = new Map<string, SessionEnv>();
+const spawnedEnv = new Map<string, SessionEnv>();
 const pendingExit = new Map<
   string,
   Array<{ code: number | null; pid: number }>
@@ -364,6 +372,7 @@ export async function spawnChild(
   const binaryPath = binaryProvider
     ? runtimeProviderBinaryPath(binaryProvider)
     : undefined;
+  const env = sessionEnvs.get(childSession(sessionId)) ?? {};
   const pid = await invoke<number>("harness_spawn", {
     sessionId,
     command,
@@ -374,9 +383,11 @@ export async function spawnChild(
     binaryPath,
     ...(codexStore ? { codexStore } : {}),
     ...(devinAskEdits ? { devinAskEdits } : {}),
+    ...(Object.keys(env).length ? { env } : {}),
   });
   if (typeof pid !== "number" || pid <= 0) return;
   livePid.set(sessionId, pid);
+  spawnedEnv.set(sessionId, env);
   const exits = pendingExit.get(sessionId);
   pendingExit.delete(sessionId);
   const exited = exits?.find((event) => event.pid === pid);
@@ -385,12 +396,36 @@ export async function spawnChild(
   exitHandlers.get(sessionId)?.(exited.code);
 }
 
+function childSession(childKey: string): string {
+  const split = childKey.indexOf("#");
+  return split < 0 ? childKey : childKey.slice(0, split);
+}
+
+/**
+ * Sets the variables this session's children start with. True when one of
+ * its children is running with others, so it has to restart to see them.
+ */
+export function setSessionChildEnv(
+  sessionId: string,
+  env: SessionEnv | undefined,
+): boolean {
+  const next = env ?? {};
+  if (Object.keys(next).length) sessionEnvs.set(sessionId, next);
+  else sessionEnvs.delete(sessionId);
+  return [...livePid.keys()].some(
+    (key) =>
+      childSession(key) === sessionId &&
+      !sameSessionEnv(spawnedEnv.get(key), next),
+  );
+}
+
 export function writeChild(sessionId: string, line: string): Promise<void> {
   return invoke("harness_write", { sessionId, line });
 }
 
 export function killChild(sessionId: string): Promise<void> {
   livePid.delete(sessionId);
+  spawnedEnv.delete(sessionId);
   pendingExit.delete(sessionId);
   unwatchChild(sessionId);
   return invoke("harness_kill", { sessionId });
@@ -407,6 +442,7 @@ export function killAllChildren(): Promise<void> {
   ownedChildren.clear();
   ownedSse.clear();
   livePid.clear();
+  spawnedEnv.clear();
   pendingExit.clear();
   return invoke("harness_kill_all");
 }

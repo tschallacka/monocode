@@ -12,6 +12,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: async () => () => {} }));
+// Streamdown highlights code asynchronously outside any act() call; this
+// test only checks transcript text, not markdown rendering.
+vi.mock("../../sessions/ui/AgentMarkdown", () => ({
+  AgentMarkdown: ({ text }: { text: string }) =>
+    createElement("div", null, text),
+}));
 
 describe("file pane agent tabs", () => {
   let root: Root;
@@ -90,7 +96,7 @@ describe("file pane agent tabs", () => {
         }),
       ),
     );
-    await vi.waitFor(() => expect(container.textContent).toContain("Done"));
+    expect(container.textContent).toContain("Done");
   });
 
   it("omits redundant tabs when the title bar already represents the file", async () => {
