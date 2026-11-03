@@ -567,6 +567,7 @@ import {
   replaceInFlightSessions,
   saveWorkspaceSnapshot,
   setSessionArchived,
+  setSessionEnv,
   setSessionLinkedWorkItem,
   setSessionPinned,
   shouldPersistSession,
@@ -574,6 +575,8 @@ import {
   flushSessionWrites,
   type SessionSummary,
 } from "../features/sessions/data/sessionStore";
+import { SessionEnvDialog } from "../features/sessions/ui/SessionEnvDialog";
+import type { SessionEnv } from "../features/sessions/model/sessionEnv";
 import { rememberLoadedSession } from "../features/sessions/data/sessionCache";
 import {
   TranscriptPool,
@@ -8672,6 +8675,7 @@ function Workspace({
               modelSettings: current.modelSettings,
               providerAccountId,
               runtimeMode: current.runtimeMode,
+              env: current.env ?? {},
               ephemeral: current.ephemeral === true,
               codexStore: mono ? "mono" : undefined,
               intent: intent === "orchestrate" ? "plan" : intent,
@@ -11105,6 +11109,64 @@ function Workspace({
       return Promise.all([cancelling, checkpointFinished]);
     },
     [flushHarnessEvents],
+  );
+
+  const [envEditor, setEnvEditor] = useState<{
+    sessionId: string;
+    title: string;
+    harness: HarnessId;
+    env?: SessionEnv;
+  } | null>(null);
+
+  const onEditSessionEnv = useCallback((sessionId: string) => {
+    const open = sessionsRef.current.find((session) => session.id === sessionId);
+    void (open ? Promise.resolve(open) : readSession(sessionId)).then(
+      (session) => {
+        if (!session) return;
+        setEnvEditor({
+          sessionId,
+          title: sessionDisplayTitle(session.title, session.harness),
+          harness: session.harness,
+          env: session.env,
+        });
+      },
+      (error: unknown) => {
+        void message(
+          `Could not load this conversation's variables.\n\n${String(error)}`,
+          { title: "MonoCode", kind: "error" },
+        );
+      },
+    );
+  }, []);
+
+  // A process reads its environment once, so a running agent is stopped; the
+  // next turn starts a new one with these variables and resumes the thread.
+  const onSaveSessionEnv = useCallback(
+    (sessionId: string, env: SessionEnv) => {
+      invalidateLoadedSession(sessionId);
+      loadedSessionCache.current.delete(sessionId);
+      const open = sessionsRef.current.find(
+        (session) => session.id === sessionId,
+      );
+      if (open) {
+        const next = sessionsRef.current.map((session) =>
+          session.id === sessionId ? { ...session, env } : session,
+        );
+        sessionsRef.current = next;
+        setSessions(next);
+        if (open.busy) void onStop(sessionId);
+        else
+          for (const harness of sessionChildHarnesses(open))
+            void stopHarnessSession(harness, sessionId).catch(console.error);
+      }
+      void setSessionEnv(sessionId, env).catch((error: unknown) => {
+        void message(
+          `Could not save this conversation's variables.\n\n${String(error)}`,
+          { title: "MonoCode", kind: "error" },
+        );
+      });
+    },
+    [invalidateLoadedSession, onStop],
   );
 
   const onStopBackgroundTask = useCallback(
@@ -14701,6 +14763,7 @@ function Workspace({
       onPinSession={onPinHistorySession}
       onPinSessions={onPinHistorySessions}
       onSetSessionLinkedWorkItem={onSetHistorySessionLinkedWorkItem}
+      onEditSessionEnv={onEditSessionEnv}
       reminders={sessionReminders.reminders}
       onSetReminders={sessionReminders.schedule}
       onCancelReminders={sessionReminders.cancel}
@@ -15444,6 +15507,24 @@ function Workspace({
                 if (id === "reload") actions.current.onReload();
               }}
               onClose={() => setFilePickerOpen(false)}
+            />
+          ) : null}
+
+          {envEditor ? (
+            <SessionEnvDialog
+              key={envEditor.sessionId}
+              initial={envEditor.env}
+              sessionTitle={envEditor.title}
+              command={envEditor.harness}
+              running={
+                sessions.find((session) => session.id === envEditor.sessionId)
+                  ?.busy === true
+              }
+              onSave={(env) => {
+                onSaveSessionEnv(envEditor.sessionId, env);
+                setEnvEditor(null);
+              }}
+              onClose={() => setEnvEditor(null)}
             />
           ) : null}
 

@@ -48,6 +48,8 @@ import type {
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
 
+import { sessionEnv, type SessionEnv } from "../model/sessionEnv";
+
 import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
@@ -101,6 +103,7 @@ type SessionRecord = {
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem | null;
   automationId?: string | null;
+  env?: Record<string, unknown> | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -126,6 +129,8 @@ type SessionUpsertPayload = {
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
+  /** Omitted leaves the stored variables as they are; `{}` clears them. */
+  env?: SessionEnv;
 };
 
 /** Only real chats belong in project history — blank tabs stay ephemeral. */
@@ -186,6 +191,7 @@ function persistableMeta(
     ...(session.automationId && isPersistableId(session.automationId)
       ? { automationId: session.automationId }
       : {}),
+    ...(session.env ? { env: sessionEnv(session.env) } : {}),
   };
 }
 
@@ -873,6 +879,16 @@ export async function setSessionPinned(
   await invoke<void>("session_set_pinned", { sessionId, pinned });
 }
 
+/** Stored encrypted; `{}` removes them. A session never saved has no row yet. */
+export async function setSessionEnv(
+  sessionId: string,
+  env: SessionEnv,
+): Promise<void> {
+  await enqueueSessionWrite(sessionId, () =>
+    invoke<void>("session_set_env", { sessionId, env: sessionEnv(env) }),
+  );
+}
+
 export async function setSessionLinkedWorkItem(
   sessionId: string,
   value: LinkedWorkItem | undefined,
@@ -1546,6 +1562,7 @@ function recordToSession(record: SessionRecord): Session {
     ...(record.automationId && isPersistableId(record.automationId)
       ? { automationId: record.automationId }
       : {}),
+    ...(record.env ? { env: sessionEnv(record.env) } : {}),
     ...(contextFromRecord(record) ?? {}),
   };
 }

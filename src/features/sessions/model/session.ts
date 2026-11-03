@@ -14,6 +14,7 @@ import {
   resolveModel,
 } from "./models";
 import { loadProjectProviderSettings } from "./projectProviders";
+import type { SessionEnv } from "./sessionEnv";
 
 export type HarnessId =
   | "claude"
@@ -525,6 +526,11 @@ export type Session = {
   providerSessionId?: string;
   /** Named local credential profile used by Claude or Codex. */
   providerAccountId?: string;
+  /**
+   * Variables the agent process starts with. Absent when none were ever set,
+   * or when the stored ones could not be decrypted; saving then keeps them.
+   */
+  env?: SessionEnv;
   /** Context-window level reported by the harness. Absent until it reports. */
   context?: ContextUsage;
   /**

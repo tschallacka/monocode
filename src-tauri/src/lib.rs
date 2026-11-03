@@ -49,6 +49,7 @@ mod remote;
 mod remote_ssh;
 mod resources;
 mod search;
+mod session_env;
 mod session_store;
 mod skills;
 pub mod ssh_askpass;
@@ -541,6 +542,7 @@ pub fn run() {
             session_store::session_set_archived,
             session_store::session_set_pinned,
             session_store::session_set_linked_work_item,
+            session_store::session_set_env,
             session_store::session_set_in_flight,
             session_store::session_list_in_flight,
             session_store::session_take_in_flight,

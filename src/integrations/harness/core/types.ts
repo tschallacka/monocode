@@ -10,6 +10,7 @@ import type {
   TurnMetrics,
 } from "../../../features/sessions/model/session";
 import type { UserQuestion } from "../../../features/sessions/model/userQuestion";
+import type { SessionEnv } from "../../../features/sessions/model/sessionEnv";
 
 export type HarnessEvent =
   | { type: "session.started" }
@@ -170,6 +171,8 @@ export type HarnessSessionInput = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   runtimeMode: RuntimeMode;
+  /** The session's own variables for the agent process. */
+  env?: SessionEnv;
   /** Keep provider context in memory; MonoCode owns the saved transcript. */
   ephemeral?: boolean;
   /** Persist Codex context in MonoCode's private Mono store. */

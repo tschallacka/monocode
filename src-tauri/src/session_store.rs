@@ -130,6 +130,9 @@ pub struct SessionUpsert {
     pub linked_work_item: Option<Value>,
     #[serde(default)]
     pub automation_id: Option<String>,
+    /// Variables added to the agent process's environment for this session.
+    #[serde(default)]
+    pub env: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +213,8 @@ pub struct SessionRecord {
     pub linked_work_item: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Value>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -240,6 +245,9 @@ pub fn session_upsert(
     }
     if !session.model_settings.is_object() {
         return Err("modelSettings must be an object".into());
+    }
+    if let Some(env) = &session.env {
+        crate::session_env::validate(env)?;
     }
     if !session.blocks.is_array() {
         return Err("blocks must be an array".into());
@@ -579,6 +587,29 @@ pub fn session_set_linked_work_item(
     set_linked_work_item(&conn, &session_id, linked_work_item.as_ref()).map_err(|e| e.to_string())
 }
 
+/// Seals before taking the lock: the first use may wait on the credential store.
+#[tauri::command(async)]
+pub fn session_set_env(
+    store: State<'_, SessionStore>,
+    session_id: String,
+    env: Value,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    crate::session_env::validate(&env)?;
+    let sealed = env
+        .as_object()
+        .filter(|vars| !vars.is_empty())
+        .map(|_| crate::session_env::seal(&env))
+        .transpose()?;
+    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+    conn.execute(
+        "UPDATE sessions SET env_json = ?1 WHERE id = ?2",
+        params![sealed, session_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InFlightSession {
@@ -802,6 +833,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("queued_messages_json", "TEXT NOT NULL DEFAULT '[]'"),
         ("queue_status", "TEXT"),
         ("sidebar_hidden", "INTEGER NOT NULL DEFAULT 0"),
+        ("env_json", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -1173,6 +1205,16 @@ pub(crate) fn upsert_session(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    // Absent means "unchanged": a reader that could not decrypt the variables
+    // must not erase them on its next save. An empty object clears them.
+    let env_given = session.env.is_some();
+    let env_json = session
+        .env
+        .as_ref()
+        .filter(|env| env.as_object().is_some_and(|vars| !vars.is_empty()))
+        .map(crate::session_env::seal)
+        .transpose()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
     let provider_session_id = session
         .provider_session_id
         .as_ref()
@@ -1241,8 +1283,9 @@ pub(crate) fn upsert_session(
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id, queued_messages_json, queue_status, sidebar_hidden
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+           automation_id, queued_messages_json, queue_status, sidebar_hidden,
+           env_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1265,7 +1308,8 @@ pub(crate) fn upsert_session(
            automation_id = excluded.automation_id,
            queued_messages_json = excluded.queued_messages_json,
            queue_status = excluded.queue_status,
-           sidebar_hidden = excluded.sidebar_hidden",
+           sidebar_hidden = excluded.sidebar_hidden,
+           env_json = CASE WHEN ?26 THEN excluded.env_json ELSE sessions.env_json END",
         params![
             session.id,
             session.cwd,
@@ -1291,6 +1335,8 @@ pub(crate) fn upsert_session(
             queued_messages_json,
             session.queue_status,
             i64::from(session.sidebar_hidden),
+            env_json,
+            env_given,
         ],
     )?;
 
@@ -1785,6 +1831,14 @@ fn optional_json(raw: Option<String>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str(&value).ok())
 }
 
+/// An unreadable column reads as absent, which later saves leave untouched.
+fn opened_env(session_id: &str, column: Option<String>) -> Option<Value> {
+    let column = column?;
+    crate::session_env::open(&column)
+        .map_err(|error| eprintln!("session {session_id}: environment not loaded: {error}"))
+        .ok()
+}
+
 fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     let parent = worker_parent(&tx, session_id)?;
@@ -1954,7 +2008,8 @@ fn get_session_record(
                 provider_session_id, {blocks}, created_at, updated_at,
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
-                automation_id, queued_messages_json, queue_status, sidebar_hidden
+                automation_id, queued_messages_json, queue_status, sidebar_hidden,
+                env_json
          FROM sessions
          WHERE id = ?1 AND inbox_ask IS NULL"
         ),
@@ -2004,6 +2059,7 @@ fn get_session_record(
                 linked_work_item: optional_json(row.get(15)?),
                 provider_account_id: row.get(16)?,
                 automation_id: nonempty(row.get(18)?),
+                env: opened_env(session_id, row.get(22)?),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             })
@@ -2209,7 +2265,36 @@ mod tests {
             worktree_removed: false,
             linked_work_item: None,
             automation_id: None,
+            env: None,
         }
+    }
+
+    #[test]
+    fn session_env_is_sealed_kept_when_absent_and_cleared_when_empty() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let env = json!({ "API_TOKEN": "s3cret" });
+        let mut row = sample("s1", "/tmp/a", "Env");
+        row.env = Some(env.clone());
+        upsert_session(&conn, &row).unwrap();
+        let column: String = conn
+            .query_row("SELECT env_json FROM sessions WHERE id = 's1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!column.contains("s3cret"));
+        assert_eq!(
+            get_session(&conn, "s1").unwrap().unwrap().env,
+            Some(env.clone())
+        );
+
+        row.env = None;
+        upsert_session(&conn, &row).unwrap();
+        assert_eq!(get_session(&conn, "s1").unwrap().unwrap().env, Some(env));
+
+        row.env = Some(json!({}));
+        upsert_session(&conn, &row).unwrap();
+        assert_eq!(get_session(&conn, "s1").unwrap().unwrap().env, None);
     }
 
     #[test]

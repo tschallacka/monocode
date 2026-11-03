@@ -341,6 +341,8 @@ type Props = {
     sessionId: string,
     item: LinkedWorkItem | undefined,
   ) => void;
+  /** Opens the editor for the variables this session's agent starts with. */
+  onEditSessionEnv?: (sessionId: string) => void;
   reminders?: readonly SessionReminder[];
   onSetReminders?: (sessionIds: readonly string[], dueAt: number) => void;
   onCancelReminders?: (sessionIds: readonly string[]) => void;
@@ -456,6 +458,7 @@ function SidebarComponent({
   onPinSession: onPinLocalSession,
   onPinSessions: onPinLocalSessions,
   onSetSessionLinkedWorkItem: onSetLocalSessionLinkedWorkItem,
+  onEditSessionEnv: onEditLocalSessionEnv,
   reminders = [],
   onSetReminders,
   onCancelReminders,
@@ -627,6 +630,8 @@ function SidebarComponent({
         void remoteChange(sessionId, { linkedWorkItem: item ?? null });
       }
     : onSetLocalSessionLinkedWorkItem;
+  // A remote host's sessions are not in this machine's encrypted store.
+  const onEditSessionEnv = remoteProject ? undefined : onEditLocalSessionEnv;
   const activeRemoteId = activeSessionId
     ? remoteSessionFor(activeSessionId)
     : undefined;
@@ -1573,6 +1578,15 @@ function SidebarComponent({
           },
         ]
       : []),
+    ...(!multipleMenuSessions && onEditSessionEnv
+      ? [
+          {
+            kind: "item" as const,
+            id: "edit-env",
+            label: "Environment variables…",
+          },
+        ]
+      : []),
     {
       kind: "item",
       id: "reminder",
@@ -1713,6 +1727,10 @@ function SidebarComponent({
     }
     if (id === "link-work-item") {
       setLinkingSession(menuSessions[0] ?? null);
+      return;
+    }
+    if (id === "edit-env") {
+      if (menuSessions[0]) onEditSessionEnv?.(menuSessions[0].id);
       return;
     }
     if (id === "folder-new") {

@@ -5,7 +5,7 @@ import type {
   TurnIntent,
 } from "../../../features/sessions/model/session";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { transferProviderSession } from "./child";
+import { setSessionChildEnv, transferProviderSession } from "./child";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import { hasLiveCatalog } from "../../../features/sessions/model/models";
@@ -279,6 +279,11 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
       throw new Error(`${input.harness} is not connected yet`);
     }
     cancelIdlePark(input.sessionId);
+    // A process reads its environment once, at start: one running with other
+    // variables is stopped, and this turn resumes the conversation in a new
+    // one. A turn that names no variables leaves them as they are.
+    if (input.env && setSessionChildEnv(input.sessionId, input.env))
+      await adapter.stopSession(input.sessionId);
     const controlled = typeof isTauri === "function" && isTauri();
     if (controlled)
       await invoke("control_authorize_turn", {

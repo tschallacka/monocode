@@ -17,6 +17,7 @@ import {
   isRemoteProvider,
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
+import { sessionEnv } from "../src/features/sessions/model/sessionEnv";
 import { providerLaunch, resolveProvider } from "./process";
 
 const exec = promisify(execFile);
@@ -355,7 +356,7 @@ export class HostChildBackend implements ChildBackend {
         stdio: ["pipe", "pipe", "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,
-        env: { ...process.env, MONOCODE_HOST: "1" },
+        env: { ...process.env, ...sessionEnv(args.env), MONOCODE_HOST: "1" },
       },
     );
     this.children.set(id, child);
