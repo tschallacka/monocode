@@ -100,6 +100,42 @@ describe("title tab context menu", () => {
     expect(onDeleteTab).toHaveBeenCalledExactlyOnceWith("other");
   });
 
+  it("opens the variables of a conversation tab, naming the focused one in a split", () => {
+    const onEditTabEnv = vi.fn();
+    act(() =>
+      root.render(
+        createElement(TitleBar, {
+          tabs: [tab("single"), tab("split", 2), tab("file", 0)],
+          activeId: "single",
+          cwd: "/project",
+          onToggleSidebar: vi.fn(),
+          onSelect: vi.fn(),
+          onClose: vi.fn(),
+          onCloseMany: vi.fn(),
+          onEditTabEnv,
+          onReorder: vi.fn(),
+        }),
+      ),
+    );
+
+    const single = openMenu("single");
+    expect(menuItem(single, "Environment variables…").textContent).toBe(
+      "Environment variables…",
+    );
+    pick(single, "Environment variables…");
+    expect(onEditTabEnv).toHaveBeenCalledExactlyOnceWith("single");
+
+    expect(
+      menuItem(openMenu("split"), "Environment variables…").textContent,
+    ).toContain("For split");
+
+    const fileLabels = Array.from(
+      openMenu("file").querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      (item) => item.textContent,
+    );
+    expect(fileLabels).not.toContain("Environment variables…");
+  });
+
   it("closes all tabs from the close group", () => {
     const onCloseAll = vi.fn();
     const onCloseMany = vi.fn();
