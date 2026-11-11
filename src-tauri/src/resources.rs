@@ -171,7 +171,6 @@ const _: () = assert!(std::mem::size_of::<VmRegionSubmapInfo64>() == 88);
 
 /// Counts the IOSurface regions of this process: the vmmap "IOSurface" rows, VM tag 88.
 #[cfg(target_os = "macos")]
-#[allow(dead_code)] // The Tauri command that reports this comes in the next subtask.
 fn iosurface_count() -> Option<u32> {
     const KERN_INVALID_ADDRESS: i32 = 1;
     const VM_MEMORY_IOSURFACE: u32 = 88;
@@ -216,9 +215,14 @@ fn iosurface_count() -> Option<u32> {
 }
 
 #[cfg(not(target_os = "macos"))]
-#[allow(dead_code)] // The Tauri command that reports this comes in the next subtask.
 fn iosurface_count() -> Option<u32> {
     None
+}
+
+/// IOSurface regions of this process, or None when the kernel walk fails.
+#[tauri::command]
+pub fn iosurface_usage() -> Option<u32> {
+    iosurface_count()
 }
 
 fn process_snapshot() -> Result<HashMap<u32, Process>, String> {

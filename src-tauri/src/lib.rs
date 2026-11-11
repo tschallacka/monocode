@@ -638,6 +638,7 @@ pub fn run() {
             window_transfer::take_window_transfer,
             chat_background::save_chat_background,
             resources::resource_usage,
+            resources::iosurface_usage,
             resources::resource_processes,
             resources::resource_stop_tool,
             chat_background::remove_chat_background,
