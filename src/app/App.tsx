@@ -95,6 +95,7 @@ import { useDragResize } from "../shared/hooks/useDragResize";
 import { beginLayoutTransition } from "../shared/lib/layoutTransition";
 import { noteProjectStep, Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
+import { useIosurfaceWatch } from "../features/notifications/model/iosurfaceWatch";
 import { ResourcePressureNotice } from "../features/notifications/ui/ResourcePressureNotice";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { NewLayoutNotice } from "./shell/NewLayoutNotice";
@@ -2977,6 +2978,9 @@ function Workspace({
       return changed ? next : prev;
     });
   }, [tabs]);
+
+  // Warns once when the IOSurface count passes the threshold.
+  useIosurfaceWatch();
 
   // Tabs are views. Hidden idle sessions drop their child. A visible session
   // keeps its child for a few minutes after a turn so follow-ups stay instant,
