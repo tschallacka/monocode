@@ -9,6 +9,16 @@ use tauri::State;
 #[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn mach_host_self() -> u32;
+    fn mach_vm_region_recurse(
+        task: u32,
+        address: *mut u64,
+        size: *mut u64,
+        nesting_depth: *mut u32,
+        info: *mut VmRegionSubmapInfo64,
+        info_count: *mut u32,
+    ) -> i32;
+    #[link_name = "mach_task_self_"]
+    static MACH_TASK_SELF: u32;
 }
 
 #[derive(Clone)]
@@ -125,6 +135,90 @@ pub fn resource_usage() -> ResourceUsage {
         cpu_percent: None,
         memory_pressure: None,
     }
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[allow(dead_code)] // Mirrors the SDK struct; only user_tag and is_submap are read.
+struct VmRegionSubmapInfo64 {
+    protection: i32,
+    max_protection: i32,
+    inheritance: u32,
+    offset: u64,
+    user_tag: u32,
+    pages_resident: u32,
+    pages_shared_now_private: u32,
+    pages_swapped_out: u32,
+    pages_dirtied: u32,
+    ref_count: u32,
+    shadow_depth: u16,
+    external_pager: u8,
+    share_mode: u8,
+    is_submap: i32,
+    behavior: i32,
+    object_id: u32,
+    user_wired_count: u16,
+    flags: u16,
+    pages_reusable: u32,
+    object_id_full: u64,
+    pages_wired: u32,
+    wire_tag: u16,
+    padding: u16,
+}
+
+#[cfg(target_os = "macos")]
+const _: () = assert!(std::mem::size_of::<VmRegionSubmapInfo64>() == 88);
+
+/// Counts the IOSurface regions of this process: the vmmap "IOSurface" rows, VM tag 88.
+#[cfg(target_os = "macos")]
+#[allow(dead_code)] // The Tauri command that reports this comes in the next subtask.
+fn iosurface_count() -> Option<u32> {
+    const KERN_INVALID_ADDRESS: i32 = 1;
+    const VM_MEMORY_IOSURFACE: u32 = 88;
+    const VM_REGION_SUBMAP_INFO_COUNT_64: u32 =
+        (std::mem::size_of::<VmRegionSubmapInfo64>() / std::mem::size_of::<u32>()) as u32;
+    let task = unsafe { MACH_TASK_SELF };
+    let mut address: u64 = 0;
+    let mut depth: u32 = 0;
+    let mut count: u32 = 0;
+    loop {
+        let mut size: u64 = 0;
+        let mut info: VmRegionSubmapInfo64 = unsafe { std::mem::zeroed() };
+        let mut info_count = VM_REGION_SUBMAP_INFO_COUNT_64;
+        let status = unsafe {
+            mach_vm_region_recurse(
+                task,
+                &mut address,
+                &mut size,
+                &mut depth,
+                &mut info,
+                &mut info_count,
+            )
+        };
+        if status == KERN_INVALID_ADDRESS {
+            return Some(count);
+        }
+        if status != 0 {
+            return None;
+        }
+        if info.is_submap != 0 {
+            depth += 1;
+            continue;
+        }
+        if info.user_tag == VM_MEMORY_IOSURFACE {
+            count += 1;
+        }
+        if size == 0 {
+            return None;
+        }
+        address = address.checked_add(size)?;
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[allow(dead_code)] // The Tauri command that reports this comes in the next subtask.
+fn iosurface_count() -> Option<u32> {
+    None
 }
 
 fn process_snapshot() -> Result<HashMap<u32, Process>, String> {
@@ -365,6 +459,12 @@ mod tests {
         assert!(owner(1, &processes, &roots).is_none());
         assert!(validate_tool(10, "10:1:1", &processes, &roots).is_err());
         assert!(validate_tool(12, "stale", &processes, &roots).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn iosurface_count_reads_this_process() {
+        assert!(iosurface_count().is_some());
     }
 
     #[cfg(target_os = "macos")]
